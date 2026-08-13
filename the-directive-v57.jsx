@@ -1637,7 +1637,7 @@ const BOLUMLER = {
       { k: "partiSadakati", ad: "Parti Sadakati" },
       { k: "hukumetSeffafligi", ad: "Hükümet Şeffaflığı" },
     ],
-    kategoriler: ["Parti", "Muhalefet", "Gizli İşler"],
+    kategoriler: ["Parti", "Gizli İşler"],
     eylemler: [
       {
         id: "siy-par-1",
@@ -1768,160 +1768,6 @@ const BOLUMLER = {
                 alinti: "Bir kurmay üye, «İki sandalye hazır gibi duruyordu» diye sitem etti.",
                 skor: (s) => 50 + (55 - s.kollar.partiSadakati) / 4,
                 etki: { koalisyon: -1 },
-              },
-            ],
-          },
-        ],
-      },
-      {
-        id: "siy-muh-1",
-        kategori: "Muhalefet",
-        tur: "KARARNAME",
-        ad: "Muhalefetle Bütçe Uzlaşması",
-        metin:
-          "Bütçe komisyonunda muhalefetin oyu olmadan sayılar tutmuyor. Grup başkanvekili masaya iki liste koydu: biri taviz, biri şart.",
-        secenekler: [
-          {
-            ad: "Taviz ver, geniş destek al",
-            sonuclar: [
-              {
-                metin: "İki kalemde taviz verildi; bütçe komisyonda geniş oyla onaylandı.",
-                alinti: "Muhalefetten bir komisyon üyesi, «Bu sefer gerçekten dinlediler» diye konuştu.",
-                skor: (s) => 50 + s.ist.onay / 6,
-                etki: { koalisyon: 2, onay: 1, hazine: -3 },
-              },
-              {
-                metin: "Kendi grubundan bazı vekiller tavizleri fazla buldu; grup içi toplantıda gerginlik yaşandı.",
-                alinti: "Grup toplantısına katılan bir vekil, «Bu kadar taviz karşılığında ne aldık» diye sitem etti.",
-                skor: (s) => 50 + (60 - s.kollar.partiSadakati) / 4,
-                etki: { koalisyon: 1, onay: -2, hazine: -3 },
-              },
-            ],
-          },
-          {
-            ad: "Taviz verme, çoğunlukla geçir",
-            sonuclar: [
-              {
-                metin: "Bütçe taviz verilmeden oylandı; koalisyon oylarıyla kıl payı geçti.",
-                alinti: "Oylamayı izleyen bir muhabir, «Salon sessizdi, sonuç belliydi ama gerginlik hissediliyordu» kaydetti.",
-                skor: (s) => 50 + s.ist.istikrar / 6,
-                etki: { onay: 1, istikrar: 1, koalisyon: -1 },
-              },
-              {
-                metin: "Muhalefet oylamadan çekildi; komisyon tutanağına «tek taraflı bütçe» ibaresi düşüldü.",
-                alinti: "Muhalefet grup başkanvekili, «Bizimle değil, bize rağmen geçirdiler» diye ifade etti.",
-                skor: (s) => 50 + (50 - s.ist.istikrar) / 4,
-                etki: { koalisyon: -1, istikrar: -1 },
-              },
-            ],
-          },
-          {
-            ad: "Muhalefetin kaynaklarını denetimle kurut",
-            riskli: true,
-            sonuclar: [
-              {
-                metin: "Muhalefet belediyelerine yönelik mali denetim sıklaştırıldı; itiraz süreleri uzadı.",
-                alinti: "Denetim ekibiyle çalışan bir müfettiş, «Talimat geldi, biz de gittik» dedi.",
-                skor: (s) => 50 + s.kollar.basinDenetimi / 4,
-                etki: { koalisyon: 2, hazine: 1, supheDegisim: 8 },
-              },
-              {
-                metin: "Denetimlerin zamanlaması dikkat çekti; sadece muhalefet belediyelerine yoğunlaştığı tabloyla gösterildi.",
-                alinti: "Konuyu araştıran bir gazeteci, «Aynı dönemde bizim belediyelere hiç denetim gitmemiş» diye ifade etti.",
-                skor: (s) => 50 + s.kollar.yargiBagimsizligi / 4,
-                etki: { koalisyon: 1, onay: -2, supheDegisim: 13 },
-              },
-            ],
-          },
-        ],
-      },
-      {
-        id: "siy-muh-2",
-        kategori: "Muhalefet",
-        tur: "KANUN",
-        buyuk: true,
-        ad: "Meclis İçtüzük Değişikliği",
-        metin:
-          "Bir tasarı üç haftadır kürsüde; muhalefetin konuşma süresi dolmuyor. İçtüzüğü değiştirmek elinde — ama bu bir demokrasi tartışmasını da açar.",
-        secenekler: [
-          {
-            ad: "Konuşma sürelerini kısalt, yasama hızlansın",
-            sonuclar: [
-              {
-                metin: "Yeni içtüzük kabul edildi; bekleyen dört tasarı aynı hafta oylamaya girdi.",
-                alinti: "Meclis muhabiri bir gazeteci, «Üç haftalık tıkanıklık bir günde açıldı» diye konuştu.",
-                skor: (s) => s.koalisyon,
-                etki: { koalisyon: 1, istikrar: 1, onay: -2, kuresel: -1 },
-              },
-              {
-                metin: "Muhalefet oturumu terk etti; salonun boş sıraları o akşam haber görüntüsü oldu.",
-                alinti: "Salonu terk eden bir muhalefet vekili, «Konuşamıyorsak burada oturmanın anlamı yok» diye ifade etti.",
-                skor: (s) => 50 + (60 - s.ist.onay) / 3.5,
-                etki: { koalisyon: 1, onay: -3, kuresel: -2, istikrar: -1 },
-              },
-            ],
-          },
-          {
-            ad: "Uzlaşma komisyonu kur, birlikte yaz",
-            sonuclar: [
-              {
-                metin: "Komisyon iki partiden eşit üyeyle kuruldu; ilk taslak altı haftada ortaklaşa yazıldı.",
-                alinti: "Komisyonda yer alan muhalefet vekili, «İlk kez masaya oturup birlikte yazdık» dedi.",
-                skor: (s) => 50 + s.kollar.hukumetSeffafligi / 5,
-                etki: { istikrar: 2, onay: 1, koalisyon: 1, hazine: -1 },
-                gecikmeli: { kuresel: 2 },
-                gecikmeliMetin: "Uzlaşmayla kabul edilen içtüzük değişikliği uluslararası parlamento gözlem raporlarında örnek gösterildi.",
-              },
-              {
-                metin: "Komisyon üç toplantı sonra tıkandı; taraflar aynı maddede anlaşamadı.",
-                alinti: "Komisyon sözcüsü bir vekil, «Altı hafta harcadık, tek madde bile yazamadık» diye sitem etti.",
-                skor: (s) => 50 + (60 - s.koalisyon) / 4,
-                etki: { onay: -1, istikrar: -1 },
-              },
-            ],
-          },
-        ],
-      },
-      {
-        id: "siy-muh-3",
-        kategori: "Muhalefet",
-        tur: "OPERASYON",
-        bekleme: 4,
-        ad: "Erken Seçim Tehdidi",
-        metin:
-          "Muhalefet üç gündür aynı tasarıyı meclise sokturmuyor. Kurmaylardan biri masaya erken seçim kartını koyuyor: «Blöf de olsa, gündemi değiştirir.»",
-        secenekler: [
-          {
-            ad: "Açıkça tehdit et, muhalefeti geri adıma zorla",
-            sonuclar: [
-              {
-                metin: "Erken seçim çıkışı ertesi gün muhalefeti masaya döndürdü; tıkanan tasarı gündeme alındı.",
-                alinti: "Kararı öğrenen bir borsa yorumcusu, «Piyasa önce tedirgin oldu, sonra rahatladı» diye konuştu.",
-                skor: (s) => 50 + s.ist.onay / 5,
-                etki: { koalisyon: 2, istikrar: 1, kuresel: -1 },
-              },
-              {
-                metin: "Muhalefet çıkışa meydan okudu; üç gün boyunca kur oynaklığı arttı.",
-                alinti: "Bir döviz bürosu çalışanı, «Müşteriler sabah farklı, akşam farklı kur soruyordu» kaydetti.",
-                skor: (s) => 50 + (62 - s.ist.onay) / 3.5,
-                etki: { koalisyon: -1, istikrar: -2, hazine: -2, kuresel: -1 },
-              },
-            ],
-          },
-          {
-            ad: "Kapalı kapılar ardında pazarlık yap",
-            sonuclar: [
-              {
-                metin: "Kapalı görüşmede iki madde üzerinde anlaşıldı; tasarı sessizce gündeme alındı.",
-                alinti: "Görüşmeye katılan bir danışman, «Kimse manşet istemedi, ikimiz de» diye ifade etti.",
-                skor: (s) => 50 + s.koalisyon / 6,
-                etki: { koalisyon: 1, istikrar: 1, kuresel: -1 },
-              },
-              {
-                metin: "Kapalı pazarlığın tutanağı bir muhalefet vekilince ifşa edildi.",
-                alinti: "İfşa eden vekil, «Kapalı kapı arkasında halkın adına konuşulmaz» diye sitem etti.",
-                skor: (s) => 50 + (65 - s.kollar.hukumetSeffafligi) / 4,
-                etki: { onay: -2, kuresel: -1 },
               },
             ],
           },
@@ -2075,6 +1921,174 @@ const BOLUMLER = {
   },
 };
 
+// ---------- MUHALEFET HAMLESİ (Doküman Bölüm 15) ----------
+// Oyunun en çok dile getirilen tasarım açığı: hiçbir şey oyuncuya karşı
+// kendiliğinden hareket etmiyordu. Şüphe göstergesi içsel bir karşı-güçtü
+// (oyuncunun kendi riskli hamlelerinin birikimi); bu üçü dışsal karşı-güç —
+// meclisteki muhalefetin, oyuncu ne yaparsa yapsın, oyunda tam bir kez
+// kendi inisiyatifiyle sahneye çıktığı an.
+//
+// Eskiden bu üçü Siyaset bölümünde oyuncunun kendi seçtiği sıradan eylemlerdi
+// (kategori: "Muhalefet"). İçerik aynen korundu, sadece teslimat şekli
+// değişti: artık panelden tıklanmıyorlar, muhalefetKontrol() tarafından
+// otomatik tetikleniyorlar — oyuncu onlara gitmiyor, onlar oyuncuya geliyor.
+const MUHALEFET_HAMLELERI = [
+  {
+    id: "siy-muh-1",
+    kategori: "Muhalefet",
+    tur: "KARARNAME",
+    ad: "Muhalefetle Bütçe Uzlaşması",
+    metin:
+      "Bütçe komisyonunda muhalefetin oyu olmadan sayılar tutmuyor. Grup başkanvekili masaya iki liste koydu: biri taviz, biri şart.",
+    secenekler: [
+      {
+        ad: "Taviz ver, geniş destek al",
+        sonuclar: [
+          {
+            metin: "İki kalemde taviz verildi; bütçe komisyonda geniş oyla onaylandı.",
+            alinti: "Muhalefetten bir komisyon üyesi, «Bu sefer gerçekten dinlediler» diye konuştu.",
+            skor: (s) => 50 + s.ist.onay / 6,
+            etki: { koalisyon: 2, onay: 1, hazine: -3 },
+          },
+          {
+            metin: "Kendi grubundan bazı vekiller tavizleri fazla buldu; grup içi toplantıda gerginlik yaşandı.",
+            alinti: "Grup toplantısına katılan bir vekil, «Bu kadar taviz karşılığında ne aldık» diye sitem etti.",
+            skor: (s) => 50 + (60 - s.kollar.partiSadakati) / 4,
+            etki: { koalisyon: 1, onay: -2, hazine: -3 },
+          },
+        ],
+      },
+      {
+        ad: "Taviz verme, çoğunlukla geçir",
+        sonuclar: [
+          {
+            metin: "Bütçe taviz verilmeden oylandı; koalisyon oylarıyla kıl payı geçti.",
+            alinti: "Oylamayı izleyen bir muhabir, «Salon sessizdi, sonuç belliydi ama gerginlik hissediliyordu» kaydetti.",
+            skor: (s) => 50 + s.ist.istikrar / 6,
+            etki: { onay: 1, istikrar: 1, koalisyon: -1 },
+          },
+          {
+            metin: "Muhalefet oylamadan çekildi; komisyon tutanağına «tek taraflı bütçe» ibaresi düşüldü.",
+            alinti: "Muhalefet grup başkanvekili, «Bizimle değil, bize rağmen geçirdiler» diye ifade etti.",
+            skor: (s) => 50 + (50 - s.ist.istikrar) / 4,
+            etki: { koalisyon: -1, istikrar: -1 },
+          },
+        ],
+      },
+      {
+        ad: "Muhalefetin kaynaklarını denetimle kurut",
+        riskli: true,
+        sonuclar: [
+          {
+            metin: "Muhalefet belediyelerine yönelik mali denetim sıklaştırıldı; itiraz süreleri uzadı.",
+            alinti: "Denetim ekibiyle çalışan bir müfettiş, «Talimat geldi, biz de gittik» dedi.",
+            skor: (s) => 50 + s.kollar.basinDenetimi / 4,
+            etki: { koalisyon: 2, hazine: 1, supheDegisim: 8 },
+          },
+          {
+            metin: "Denetimlerin zamanlaması dikkat çekti; sadece muhalefet belediyelerine yoğunlaştığı tabloyla gösterildi.",
+            alinti: "Konuyu araştıran bir gazeteci, «Aynı dönemde bizim belediyelere hiç denetim gitmemiş» diye ifade etti.",
+            skor: (s) => 50 + s.kollar.yargiBagimsizligi / 4,
+            etki: { koalisyon: 1, onay: -2, supheDegisim: 13 },
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "siy-muh-2",
+    kategori: "Muhalefet",
+    tur: "KANUN",
+    buyuk: true,
+    ad: "Meclis İçtüzük Değişikliği",
+    metin:
+      "Bir tasarı üç haftadır kürsüde; muhalefetin konuşma süresi dolmuyor. İçtüzüğü değiştirmek elinde — ama bu bir demokrasi tartışmasını da açar.",
+    secenekler: [
+      {
+        ad: "Konuşma sürelerini kısalt, yasama hızlansın",
+        sonuclar: [
+          {
+            metin: "Yeni içtüzük kabul edildi; bekleyen dört tasarı aynı hafta oylamaya girdi.",
+            alinti: "Meclis muhabiri bir gazeteci, «Üç haftalık tıkanıklık bir günde açıldı» diye konuştu.",
+            skor: (s) => s.koalisyon,
+            etki: { koalisyon: 1, istikrar: 1, onay: -2, kuresel: -1 },
+          },
+          {
+            metin: "Muhalefet oturumu terk etti; salonun boş sıraları o akşam haber görüntüsü oldu.",
+            alinti: "Salonu terk eden bir muhalefet vekili, «Konuşamıyorsak burada oturmanın anlamı yok» diye ifade etti.",
+            skor: (s) => 50 + (60 - s.ist.onay) / 3.5,
+            etki: { koalisyon: 1, onay: -3, kuresel: -2, istikrar: -1 },
+          },
+        ],
+      },
+      {
+        ad: "Uzlaşma komisyonu kur, birlikte yaz",
+        sonuclar: [
+          {
+            metin: "Komisyon iki partiden eşit üyeyle kuruldu; ilk taslak altı haftada ortaklaşa yazıldı.",
+            alinti: "Komisyonda yer alan muhalefet vekili, «İlk kez masaya oturup birlikte yazdık» dedi.",
+            skor: (s) => 50 + s.kollar.hukumetSeffafligi / 5,
+            etki: { istikrar: 2, onay: 1, koalisyon: 1, hazine: -1 },
+            gecikmeli: { kuresel: 2 },
+            gecikmeliMetin: "Uzlaşmayla kabul edilen içtüzük değişikliği uluslararası parlamento gözlem raporlarında örnek gösterildi.",
+          },
+          {
+            metin: "Komisyon üç toplantı sonra tıkandı; taraflar aynı maddede anlaşamadı.",
+            alinti: "Komisyon sözcüsü bir vekil, «Altı hafta harcadık, tek madde bile yazamadık» diye sitem etti.",
+            skor: (s) => 50 + (60 - s.koalisyon) / 4,
+            etki: { onay: -1, istikrar: -1 },
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "siy-muh-3",
+    kategori: "Muhalefet",
+    tur: "OPERASYON",
+    bekleme: 4,
+    ad: "Erken Seçim Tehdidi",
+    metin:
+      "Muhalefet üç gündür aynı tasarıyı meclise sokturmuyor. Kurmaylardan biri masaya erken seçim kartını koyuyor: «Blöf de olsa, gündemi değiştirir.»",
+    secenekler: [
+      {
+        ad: "Açıkça tehdit et, muhalefeti geri adıma zorla",
+        sonuclar: [
+          {
+            metin: "Erken seçim çıkışı ertesi gün muhalefeti masaya döndürdü; tıkanan tasarı gündeme alındı.",
+            alinti: "Kararı öğrenen bir borsa yorumcusu, «Piyasa önce tedirgin oldu, sonra rahatladı» diye konuştu.",
+            skor: (s) => 50 + s.ist.onay / 5,
+            etki: { koalisyon: 2, istikrar: 1, kuresel: -1 },
+          },
+          {
+            metin: "Muhalefet çıkışa meydan okudu; üç gün boyunca kur oynaklığı arttı.",
+            alinti: "Bir döviz bürosu çalışanı, «Müşteriler sabah farklı, akşam farklı kur soruyordu» kaydetti.",
+            skor: (s) => 50 + (62 - s.ist.onay) / 3.5,
+            etki: { koalisyon: -1, istikrar: -2, hazine: -2, kuresel: -1 },
+          },
+        ],
+      },
+      {
+        ad: "Kapalı kapılar ardında pazarlık yap",
+        sonuclar: [
+          {
+            metin: "Kapalı görüşmede iki madde üzerinde anlaşıldı; tasarı sessizce gündeme alındı.",
+            alinti: "Görüşmeye katılan bir danışman, «Kimse manşet istemedi, ikimiz de» diye ifade etti.",
+            skor: (s) => 50 + s.koalisyon / 6,
+            etki: { koalisyon: 1, istikrar: 1, kuresel: -1 },
+          },
+          {
+            metin: "Kapalı pazarlığın tutanağı bir muhalefet vekilince ifşa edildi.",
+            alinti: "İfşa eden vekil, «Kapalı kapı arkasında halkın adına konuşulmaz» diye sitem etti.",
+            skor: (s) => 50 + (65 - s.kollar.hukumetSeffafligi) / 4,
+            etki: { onay: -2, kuresel: -1 },
+          },
+        ],
+      },
+    ],
+  },
+];
+
 // ============================================================
 //  MOTOR — saf fonksiyonlar
 // ============================================================
@@ -2105,6 +2119,8 @@ function yeniOyun(secilenVaatler) {
     supheGorundu: false, // ilk riskli hamleye kadar panelde gizli
     kisitlamaBitis: 0,   // yetki kısıtlamasının biteceği tur
     kademeGecmisi: [],   // hangi şüphe kademeleri yaşandı
+    muhalefetTetiklendi: false, // muhalefet hamlesi oyunda bir kez yaşandı mı
+    muhalefetEylemId: null,     // hangi sahne tetiklendi
     kollar: { ...BASLANGIC_KOLLAR },
     onceki: { onay: 58, hazine: 40, istikrar: 60, kuresel: 55, nufuz: 14, koalisyon: 51 },
     nakit: { giren: 0, cikan: 0 }, // son kapanıştan bu yana hazine hareketi
@@ -2456,6 +2472,13 @@ function turSonu(s) {
     };
   }
 
+  // Görevden alınmıyorsa, muhalefetin oyunda tam bir kez sahneye çıkıp
+  // çıkmayacağı bu turun kapanışında kontrol edilir.
+  const oyunBittiMi = kademe && kademe.oyunBitti;
+  const muhalefetId = oyunBittiMi
+    ? null
+    : muhalefetKontrol({ ...yeni, koalisyon: yeniKoalisyon }, gelecekTur);
+
   return {
     ...yeni,
     belgeler,
@@ -2468,7 +2491,15 @@ function turSonu(s) {
     tur: gelecekTur,
     kolDegisimi: {},
     gunluk: rapor,
-    faz: kademe && kademe.oyunBitti ? "azil" : gelecekTur > TOPLAM_TUR ? "secim" : "panel",
+    muhalefetTetiklendi: yeni.muhalefetTetiklendi || !!muhalefetId,
+    muhalefetEylemId: muhalefetId || yeni.muhalefetEylemId || null,
+    faz: oyunBittiMi
+      ? "azil"
+      : muhalefetId
+      ? "muhalefet"
+      : gelecekTur > TOPLAM_TUR
+      ? "secim"
+      : "panel",
   };
 }
 
@@ -2593,6 +2624,42 @@ function kademeKontrol(s) {
 // Yetki kısıtlaması sürüyor mu?
 function kisitlamaVar(s) {
   return (s.kisitlamaBitis || 0) > s.tur;
+}
+
+// Muhalefet hamlesi: dışsal karşı-güç (Doküman Bölüm 15).
+// Şüphe göstergesi gizliydi çünkü içsel bir dosyaydı; bu üç eşik panelde
+// zaten açık olan hazine/koalisyon/onay üzerine kurulu — gizli bir gösterge
+// eklemek yerine oyuncunun zaten izlediği sayılara bağlandı. Oyunda tam bir
+// kez tetiklenir: göstergelerden biri gerçekten eşiği geçerse hemen, hiçbiri
+// geçmezse MUHALEFET_ZORLA_TUR'da en zayıf olan üzerinden zorla.
+const MUHALEFET_HAZINE_ESIGI = 15;
+const MUHALEFET_KOALISYON_ESIGI = 45;
+const MUHALEFET_ONAY_ESIGI = 45;
+const MUHALEFET_ZORLA_TUR = 9;
+
+function muhalefetKontrol(s, gelecekTur) {
+  if (s.muhalefetTetiklendi) return null;
+  if (gelecekTur < 3 || gelecekTur > TOPLAM_TUR) return null;
+
+  // Her göstergeyi kendi eşiğine oranlayarak karşılaştırılabilir hale getirir;
+  // 1'in altı, o göstergenin eşiği geçtiği anlamına gelir.
+  const durumlar = [
+    { id: "siy-muh-1", oran: s.ist.hazine / MUHALEFET_HAZINE_ESIGI },
+    { id: "siy-muh-2", oran: s.koalisyon / MUHALEFET_KOALISYON_ESIGI },
+    { id: "siy-muh-3", oran: s.ist.onay / MUHALEFET_ONAY_ESIGI },
+  ];
+
+  const kritik = durumlar.filter((d) => d.oran < 1);
+  if (kritik.length > 0) {
+    kritik.sort((a, b) => a.oran - b.oran);
+    return kritik[0].id;
+  }
+
+  if (gelecekTur >= MUHALEFET_ZORLA_TUR) {
+    return [...durumlar].sort((a, b) => a.oran - b.oran)[0].id;
+  }
+
+  return null;
 }
 
 // Seçim (Doküman Bölüm 11)
@@ -2952,6 +3019,7 @@ export default function TheDirective() {
   const [secenekIdx, setSecenekIdx] = useState(null);
   const [sonuc, setSonuc] = useState(null);
   const [oylama, setOylama] = useState(null);
+  const [muhalefetSonuc, setMuhalefetSonuc] = useState(null);
 
   const bolum = bolumK ? BOLUMLER[bolumK] : null;
   const eylem = bolum ? bolum.eylemler.find((e) => e.id === eylemId) : null;
@@ -3193,6 +3261,31 @@ export default function TheDirective() {
     else setFaz(yeni.faz === "secim" ? "secim" : "gunluk");
   }
 
+  // Muhalefet hamlesine oyuncunun tepkisi. Nüfuz harcanmaz — bu oyuncunun
+  // başlattığı bir eylem değil, muhalefetin oyuncuya dayattığı bir an.
+  function muhalefetSecenekSec(secenekIdx) {
+    const muhalefetEylem = MUHALEFET_HAMLELERI.find((m) => m.id === s.muhalefetEylemId);
+    if (!muhalefetEylem) return;
+    const secenek = muhalefetEylem.secenekler[secenekIdx];
+    const h = sonucHesapla(secenek, s);
+    const kazanan = secenek.sonuclar[h.kazananIdx];
+    let yeni = etkiUygula(s, kazanan.etki);
+    const kuyruk = kazanan.gecikmeli
+      ? [
+          ...(yeni.bekleyenEtkiler || []),
+          {
+            tur: yeni.tur + ETKI_GECIKMESI,
+            kaynak: muhalefetEylem.ad,
+            metin: kazanan.gecikmeliMetin || "Uzlaşmanın asıl etkisi şimdi hissedildi.",
+            etki: kazanan.gecikmeli,
+          },
+        ]
+      : yeni.bekleyenEtkiler || [];
+    yeni = { ...yeni, bekleyenEtkiler: kuyruk };
+    setS(yeni);
+    setMuhalefetSonuc({ secenekIdx, kazanan });
+  }
+
   // ---------- AÇILIŞ ----------
   if (faz === "yukleniyor") {
     return (
@@ -3383,7 +3476,32 @@ export default function TheDirective() {
 
   // ---------- TUR GÜNLÜĞÜ ----------
   if (faz === "gunluk") {
-    return <Gazete rapor={s.gunluk} sonrakiTur={s.tur} onDevam={() => setFaz("panel")} />;
+    return (
+      <Gazete
+        rapor={s.gunluk}
+        sonrakiTur={s.tur}
+        onDevam={() => setFaz(s.faz === "muhalefet" ? "muhalefet" : "panel")}
+      />
+    );
+  }
+
+  // ---------- MUHALEFET HAMLESİ ----------
+  if (faz === "muhalefet") {
+    const muhalefetEylem = MUHALEFET_HAMLELERI.find((m) => m.id === s.muhalefetEylemId);
+    if (muhalefetEylem) {
+      return (
+        <MuhalefetHamlesi
+          eylem={muhalefetEylem}
+          s={s}
+          sonuc={muhalefetSonuc}
+          onSecenekSec={muhalefetSecenekSec}
+          onDevam={() => {
+            setMuhalefetSonuc(null);
+            setFaz("panel");
+          }}
+        />
+      );
+    }
   }
 
   // ---------- MECLİS OYLAMASI (animasyonlu) ----------
@@ -4305,6 +4423,143 @@ function kabulMu(i, kabulSayisi) {
   return (
     Math.floor(((i + 1) * kabulSayisi) / TOPLAM_SANDALYE) >
     Math.floor((i * kabulSayisi) / TOPLAM_SANDALYE)
+  );
+}
+
+// Muhalefetin oyunda tam bir kez sahneye çıktığı an. Oyuncunun kendi seçtiği
+// bir eylem değil — panel akışının dışından, kağıt katmanının aynı görsel
+// dilini kullanarak araya giren zorunlu bir sahne.
+function MuhalefetHamlesi({ eylem, s, sonuc, onSecenekSec, onDevam }) {
+  if (sonuc) {
+    const { kazanan } = sonuc;
+    return (
+      <Kabuk>
+        <div className="max-w-md mx-auto px-4 pt-8 pb-10">
+          <div className="kagit p-6 mb-4 relative overflow-hidden">
+            <div
+              className="damga sans font-extrabold absolute"
+              style={{
+                color: C.damga,
+                border: `3px solid ${C.damga}`,
+                top: 18, right: 14, padding: "3px 10px", borderRadius: 6,
+                fontSize: 15, letterSpacing: "0.06em",
+              }}
+            >
+              MUHALEFET
+            </div>
+
+            <div className="mono mb-3" style={{ fontSize: 9, color: C.damga, letterSpacing: "0.15em" }}>
+              MUHALEFET HAMLESİ · TUR {s.tur}
+            </div>
+            <h2 className="mono font-bold mb-4" style={{ fontSize: 17, color: C.murekkep }}>
+              {eylem.ad}
+            </h2>
+
+            <div className="mono mb-2" style={{ fontSize: 9, color: "#6B6250", letterSpacing: "0.12em" }}>
+              SONUÇ
+            </div>
+            <p className="mono mb-4" style={{ fontSize: 13, color: C.murekkep, lineHeight: 1.65 }}>
+              {kazanan.metin}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(kazanan.etki).map(([k, v]) => (
+                <span
+                  key={k}
+                  className="mono px-2 py-1 rounded"
+                  style={{
+                    fontSize: 10,
+                    background: v > 0 ? "rgba(45,110,70,0.14)" : "rgba(155,47,42,0.12)",
+                    color: v > 0 ? "#2D6E46" : C.damga,
+                  }}
+                >
+                  {etkiMetni(k, v)}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <button onClick={onDevam} className="btn-ana w-full py-3.5 rounded-lg">
+            Panele dön
+          </button>
+        </div>
+      </Kabuk>
+    );
+  }
+
+  return (
+    <Kabuk>
+      <div className="max-w-md mx-auto px-4 pt-6 pb-10">
+        <div className="kutu p-3 mb-4" style={{ background: "rgba(229,85,90,.08)", borderColor: "rgba(229,85,90,.35)" }}>
+          <div className="mono flex items-center gap-1.5" style={{ fontSize: 9, color: C.eksi, letterSpacing: "0.14em" }}>
+            <AlertTriangle size={12} /> MUHALEFET HAMLESİ
+          </div>
+        </div>
+
+        <div className="kagit p-6 mb-4">
+          <div className="mono mb-3" style={{ fontSize: 9, color: C.damga, letterSpacing: "0.15em" }}>
+            TUR {s.tur} · MUHALEFET İNİSİYATİFİ
+          </div>
+          <h2 className="mono font-bold mb-3" style={{ fontSize: 18, color: C.murekkep, lineHeight: 1.3 }}>
+            {eylem.ad}
+          </h2>
+          <p className="mono mb-5" style={{ fontSize: 13, color: "#3A3527", lineHeight: 1.65 }}>
+            {eylem.metin}
+          </p>
+
+          <div className="mono mb-3" style={{ fontSize: 9, color: "#6B6250", letterSpacing: "0.12em" }}>
+            NASIL KARŞILIK VERİYORSUN?
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {eylem.secenekler.map((sec, i) => {
+              const h = sonucHesapla(sec, s);
+              return (
+                <button
+                  key={i}
+                  onClick={() => onSecenekSec(i)}
+                  className="rounded-lg overflow-hidden text-left p-3"
+                  style={{ border: `1px solid #C9BE9E` }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="mono font-semibold" style={{ fontSize: 13, color: C.murekkep }}>
+                      {sec.ad}
+                    </span>
+                    {sec.riskli && (
+                      <span
+                        className="mono px-1.5 py-0.5 rounded"
+                        style={{ fontSize: 9, color: C.eksi, border: `1px solid ${C.eksi}` }}
+                      >
+                        RİSKLİ
+                      </span>
+                    )}
+                  </div>
+                  {sec.sonuclar.map((so, j) => {
+                    const kazanir = h.kazananIdx === j;
+                    return (
+                      <div key={j} className="flex gap-2.5 mb-1.5">
+                        <span
+                          className="mono font-bold px-1.5 py-0.5 rounded self-start"
+                          style={{
+                            fontSize: 11, minWidth: 40, textAlign: "center",
+                            color: kazanir ? "#FFF" : "#6B6250",
+                            background: kazanir ? C.damga : "rgba(0,0,0,0.06)",
+                          }}
+                        >
+                          %{h.yuzdeler[j]}
+                        </span>
+                        <span className="mono flex-1" style={{ fontSize: 11.5, color: kazanir ? C.murekkep : "#7A7260", lineHeight: 1.5 }}>
+                          {so.metin}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Kabuk>
   );
 }
 
