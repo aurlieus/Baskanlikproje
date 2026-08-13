@@ -2123,6 +2123,23 @@ function eylemDurumu(s, eylem) {
     };
   }
 
+  // Kalıcı durumlar nüfuzdan önce gelir: kullanılmış bir belge, nüfuz düşük diye
+  // "Yetersiz nüfuz" etiketi göstermemeli — o etiket düzelebilecek bir durumu anlatır.
+  const sonKullanim = s.kullanim[eylem.id];
+  if (sonKullanim !== undefined) {
+    if (eylem.tur !== "OPERASYON") {
+      return { acik: false, etiket: "Kullanıldı", sebep: "Bu belge tek seferliktir." };
+    }
+    const hazirTur = sonKullanim + (eylem.bekleme || 2);
+    if (s.tur < hazirTur) {
+      return {
+        acik: false,
+        etiket: `Tur ${hazirTur}`,
+        sebep: `Bu operasyon tur ${hazirTur}'de tekrar yapılabilir.`,
+      };
+    }
+  }
+
   // Meclis'ten dönen tasarı kaybolmaz; bir süre sonra yeniden sunulabilir.
   const redTuru = s.reddedilen[eylem.id];
   if (redTuru !== undefined) {
@@ -2147,20 +2164,7 @@ function eylemDurumu(s, eylem) {
     };
   }
 
-  const sonKullanim = s.kullanim[eylem.id];
-  if (sonKullanim === undefined) return { acik: true };
-
-  if (eylem.tur !== "OPERASYON") {
-    return { acik: false, etiket: "Kullanıldı", sebep: "Bu belge tek seferliktir." };
-  }
-
-  const hazirTur = sonKullanim + (eylem.bekleme || 2);
-  if (s.tur >= hazirTur) return { acik: true };
-  return {
-    acik: false,
-    etiket: `Tur ${hazirTur}`,
-    sebep: `Bu operasyon tur ${hazirTur}'de tekrar yapılabilir.`,
-  };
+  return { acik: true };
 }
 
 // Etkiyi state'e uygular (yüzdelik olanlar 0–100 arasında kırpılır)
@@ -2214,7 +2218,12 @@ function sonucHesapla(secenek, s) {
   const skorlar = secenek.sonuclar.map((so) => Math.max(1, so.skor(s)));
   const toplam = skorlar.reduce((a, b) => a + b, 0);
   const yuzdeler = skorlar.map((sk) => Math.round((sk / toplam) * 100));
-  const kazananIdx = skorlar[0] >= skorlar[1] ? 0 : 1;
+  // En yüksek skorlu sonuç gerçekleşir. Eşitlikte ilk sonuç kazanır.
+  // İkiden fazla sonuçlu bir yaklaşım yazılırsa da doğru çalışır.
+  let kazananIdx = 0;
+  for (let i = 1; i < skorlar.length; i++) {
+    if (skorlar[i] > skorlar[kazananIdx]) kazananIdx = i;
+  }
   return { yuzdeler, kazananIdx };
 }
 
@@ -2227,7 +2236,8 @@ function meclisOyla(s, gereken = BARAJ) {
   const temel = s.koalisyon;
   const sadakatBonus = Math.round((s.kollar.partiSadakati - 50) / 10);
   const onayBonus = Math.round((s.ist.onay - 55) / 10);
-  const toplam = Math.max(0, temel + sadakatBonus + onayBonus);
+  // Mecliste 101 sandalye var; kabul oyu bundan fazla olamaz.
+  const toplam = Math.max(0, Math.min(TOPLAM_SANDALYE, temel + sadakatBonus + onayBonus));
   return { temel, sadakatBonus, onayBonus, toplam, gereken, gecti: toplam >= gereken };
 }
 
@@ -2442,7 +2452,7 @@ function mansetSec(rapor) {
   if (d.onay < 35)
     return { baslik: "SOKAK HÜKÜMETE SIRTINI DÖNÜYOR", spot: "Onay oranı kritik eşiğin altında; kabine sarsıntıda.", agir: true };
   if (d.koalisyon < BARAJ)
-    return { baslik: "MECLİS ÇOĞUNLUĞU KAYBEDİLDİ", spot: "Koalisyon barajın altına düştü. Kanun çıkarmak artık mümkün değil.", agir: true };
+    return { baslik: "MECLİS ÇOĞUNLUĞU KAYBEDİLDİ", spot: "Koalisyon barajın altına düştü. Artık her tasarı parti sadakatine ve halk desteğine kalmış durumda.", agir: true };
   if (d.hazine < 10)
     return { baslik: "HAZİNE DİP SEVİYEDE", spot: "Kasadaki daralma yeni harcamaların önünü kesiyor.", agir: true };
   if (d.istikrar < 40)
@@ -3006,7 +3016,7 @@ export default function TheDirective() {
         ist: {
           ...prev.ist,
           nufuz: geriAliyor
-            ? Math.min(100, prev.ist.nufuz + KOL_MALIYET)
+            ? Math.min(NUFUZ_TAVAN, prev.ist.nufuz + KOL_MALIYET)
             : prev.ist.nufuz - KOL_MALIYET,
         },
       };
@@ -3121,8 +3131,10 @@ export default function TheDirective() {
   function belgeIptal(anahtar) {
     setIptalAdayi(null);
     setS((prev) => {
+      // Yürürlüğe girmiş belge de, henüz girmemiş olan da geri çekilebilir.
+      // Aksi halde aynı turda açılan belgeler kapasiteyi doldurup kilitliyordu.
       const b = prev.belgeler.find((x) => x.anahtar === anahtar);
-      if (!b || b.durum !== "yururlukte") return prev;
+      if (!b) return prev;
       let yeni = { ...prev, belgeler: prev.belgeler.filter((x) => x.anahtar !== anahtar) };
       yeni = etkiUygula(yeni, { nufuz: -2, onay: -3 });
       return yeni;
@@ -3509,7 +3521,7 @@ export default function TheDirective() {
           {kapasiteDolu && (
             <div className="kutu p-3 mb-3 mono" style={{ fontSize: 11, color: C.eksi }}>
               Bürokratik kapasite dolu ({KAPASITE}/{KAPASITE}). Bu belgeyi açabilmek için
-              panelden yürürlükteki bir belgeyi geri çekmen gerekiyor. Operasyonlar bu
+              panelden açık dosyalardan birini geri çekmen gerekiyor. Operasyonlar bu
               sınıra tabi değildir.
             </div>
           )}
@@ -3807,7 +3819,7 @@ export default function TheDirective() {
             altMetin={
               s.koalisyon >= BARAJ
                 ? `Mecliste ${Math.round(s.koalisyon)} sandalyen var, çoğunluk sende.`
-                : "Çoğunluğu kaybettin — kanun geçirmek için çoğunluğu artır."
+                : "Çoğunluğu kaybettin. Kanun geçirmek artık parti sadakatine ve halk desteğine bağlı."
             }
           />
         </div>
@@ -3861,7 +3873,7 @@ export default function TheDirective() {
         </div>
         <div className="mono mb-3" style={{ fontSize: 10, color: C.sonuk, lineHeight: 1.5 }}>
           {aktifBelgeSayisi(s) >= KAPASITE
-            ? "Bürokrasi doldu. Yeni kanun veya kararname için yürürlüktekilerden birini geri çekmelisin."
+            ? "Bürokrasi doldu. Yeni kanun veya kararname için açık dosyalardan birini geri çekmelisin."
             : `Devlet aynı anda en fazla ${KAPASITE} büyük işi yürütebilir. Operasyonlar bu sayıya girmez.`}
         </div>
 
@@ -3881,11 +3893,9 @@ export default function TheDirective() {
                   : `Tamamlanma: tur ${b.tamamlanmaTuru}`}
               </div>
             </div>
-            {b.durum === "yururlukte" && (
-              <button onClick={() => setIptalAdayi(b)} className="kol-btn" aria-label={`${b.ad} iptal et`}>
-                <X size={13} />
-              </button>
-            )}
+            <button onClick={() => setIptalAdayi(b)} className="kol-btn" aria-label={`${b.ad} geri çek`}>
+              <X size={13} />
+            </button>
           </div>
         ))}
 
@@ -3974,9 +3984,12 @@ export default function TheDirective() {
               {iptalAdayi.ad}
             </h3>
             <p className="sans mb-4" style={{ fontSize: 13, color: C.solgun, lineHeight: 1.6 }}>
-              Bu belge tur {iptalAdayi.tamamlanmaTuru}'de tamamlanacak ve etkisini bir kez
-              daha verecekti. Geri çekersen o kazanç iptal olur — şimdiye kadar verdiği
-              etki ise geri alınmaz.
+              {iptalAdayi.durum === "yururlukte"
+                ? `Bu belge tur ${iptalAdayi.tamamlanmaTuru}'de tamamlanacak ve etkisini bir kez
+                   daha verecekti. Geri çekersen o kazanç iptal olur — şimdiye kadar verdiği
+                   etki ise geri alınmaz.`
+                : `Bu belge tur ${iptalAdayi.yururlukTuru}'de yürürlüğe girecekti. Geri çekersen
+                   hiç yürürlüğe girmez; bugüne kadar bir etkisi olmadı.`}
             </p>
 
             <div className="kutu p-3 mb-4" style={{ background: "rgba(229,85,90,.07)", borderColor: "rgba(229,85,90,.3)" }}>
@@ -3991,7 +4004,9 @@ export default function TheDirective() {
                   Onay −3
                 </span>
                 <span className="mono px-2 py-1 rounded" style={{ fontSize: 10, background: "rgba(229,85,90,.14)", color: C.eksi }}>
-                  Tamamlanma bonusu iptal
+                  {iptalAdayi.durum === "yururlukte"
+                    ? "Tamamlanma bonusu iptal"
+                    : "Belge hiç yürürlüğe girmez"}
                 </span>
               </div>
             </div>
