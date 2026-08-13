@@ -67,6 +67,13 @@ const NUFUZ_TAVAN = 30;
 // Bir fabrika kurulur ama istihdamı üretime geçince yaratır.
 const ETKI_GECIKMESI = 2;
 
+// Kanunun ömrü: imzadan kaç tur sonra yürürlüğe girer, kaç tur sonra tamamlanır.
+// Tamamlanma bürokratik kapasiteyi de boşaltır; bu yüzden süre uzadıkça oyunda
+// geçirilebilecek kanun sayısı düşer. 4 seçildi: 10 turluk oyunda kanunların
+// çoğunu görebilmek için yeterince kısa, tamamlanmayı beklemek için yeterince uzun.
+const KANUN_YURURLUK = 2;
+const KANUN_TAMAMLANMA = 4;
+
 // Her kanun aynı kolaylıkta geçmez. Yapısal reformlar nitelikli çoğunluk ister.
 const BUYUK_BARAJ = 55;
 // Meclis'ten dönen tasarı hemen yeniden sunulamaz, ama kaybolmaz da.
@@ -166,14 +173,28 @@ const ETIKET = {
 };
 
 // ---------- KAMPANYA VAATLERİ (Doküman Bölüm 12) ----------
+// Hedefler simülasyonla eşitlendi. Ölçüt iki tanedir ve ikisi de aynı anda tutmalı:
+//  1) Hiçbir vaat bedava olmamalı — sıradan oyunun zaten getirdiği bir eşik,
+//     o vaadi seçeni hiçbir şey yapmadan ödüllendirir. Eski `issizlik` eşiği
+//     (başlangıç+10 = 62) tam olarak böyleydi: normal oyun zaten 63 getiriyordu.
+//     Tek başına bu, vaat seçimini oyunun en belirleyici kararı yapıyordu —
+//     aynı oyunla vaat çiftine göre %61.8 ile %47.8 arasında sonuç çıkıyordu.
+//  2) Vaadini kovalayan oyuncu için hepsi ulaşılabilir olmalı ve birbirine
+//     yakın kazandırmalı. Ölçüldü: kovalayan oyuncuda vaatler arası fark 0.85 puan.
+//
+// Ödül/ceza vaat başına ayarlanabilir ama şu an hepsi eşittir. Denendi ve ölçüldü:
+// hedefler eşitlendikten sonra ölçeklenecek bir zorluk farkı kalmıyor, farklı ödül
+// vermek yalnızca yüksek ödüllü vaadi üstün kılıyordu (fark 0.85 → 3.5'e çıkıyordu).
 const VAATLER = [
   {
     id: "issizlik",
     ad: "İşsizliği düşüreceğim",
     kisa: "İstihdam",
     kategori: "İstihdam",
-    kosulMetni: "İstihdam, başlangıcın 10 puan üstüne çıkmalı",
-    olc: (s) => ({ simdi: s.kpi.istihdam, hedef: s.baslangic.istihdam + 10 }),
+    kosulMetni: "İstihdam, başlangıcın 12 puan üstüne çıkmalı",
+    odul: 8,
+    ceza: 6,
+    olc: (s) => ({ simdi: s.kpi.istihdam, hedef: s.baslangic.istihdam + 12 }),
   },
   {
     id: "saglik",
@@ -181,6 +202,8 @@ const VAATLER = [
     kisa: "Halk sağlığı",
     kategori: "Sağlık",
     kosulMetni: "Halk sağlığı 70'e ulaşmalı",
+    odul: 8,
+    ceza: 6,
     olc: (s) => ({ simdi: s.kpi.halkSagligi, hedef: 70 }),
   },
   {
@@ -188,8 +211,10 @@ const VAATLER = [
     ad: "Sokakları güvene kavuşturacağım",
     kisa: "İstikrar",
     kategori: "İç Güvenlik",
-    kosulMetni: "İstikrar 70'e ulaşmalı",
-    olc: (s) => ({ simdi: s.ist.istikrar, hedef: 70 }),
+    kosulMetni: "İstikrar 68'e ulaşmalı",
+    odul: 8,
+    ceza: 6,
+    olc: (s) => ({ simdi: s.ist.istikrar, hedef: 68 }),
   },
   {
     id: "itibar",
@@ -197,6 +222,8 @@ const VAATLER = [
     kisa: "Küresel itibar",
     kategori: "Diplomasi",
     kosulMetni: "Küresel itibar 70'e ulaşmalı",
+    odul: 8,
+    ceza: 6,
     olc: (s) => ({ simdi: s.ist.kuresel, hedef: 70 }),
   },
   {
@@ -204,10 +231,14 @@ const VAATLER = [
     ad: "Vergi yükünü hafifleteceğim",
     kisa: "Ortalama vergi",
     kategori: "Vergi",
-    kosulMetni: "Ortalama vergi oranı başlangıcın altında kalmalı",
+    // Kendiliğinden tutulmasın: oyuncunun vergi kolunu bilerek indirmesi gerekir
+    // ve o indirim tüm dönem boyunca vergi gelirinden götürür.
+    kosulMetni: "Ortalama vergi oranı başlangıcın 2 puan altına inmeli",
+    odul: 8,
+    ceza: 6,
     olc: (s) => ({
       simdi: (s.kollar.gelirVergisi + s.kollar.kurumsalVergi) / 2,
-      hedef: (s.baslangic.gelirVergisi + s.baslangic.kurumsalVergi) / 2,
+      hedef: (s.baslangic.gelirVergisi + s.baslangic.kurumsalVergi) / 2 - 2,
       tersine: true, // burada hedefin ALTINDA kalmak gerekir
     }),
   },
@@ -2569,8 +2600,13 @@ function kisitlamaVar(s) {
 // Seçim, nötr bir noktadan (57) yukarı ya da aşağı sapma olarak hesaplanır.
 const SECIM_NOTR = 57;
 const SECIM_EGIM = 0.85;
+// Vaadin kendi ödülü/cezası yoksa kullanılan varsayılan.
 const VAAT_ODUL = 8;
 const VAAT_CEZA = 6;
+
+// Bir vaadin tutulunca kazandırdığı, tutulmayınca kaybettirdiği puan.
+const vaatOdul = (v) => (v && v.odul != null ? v.odul : VAAT_ODUL);
+const vaatCeza = (v) => (v && v.ceza != null ? v.ceza : VAAT_CEZA);
 
 function secimHesapla(s) {
   const performans = s.ist.onay * 0.55 + s.ist.istikrar * 0.25 + s.ist.kuresel * 0.2;
@@ -2580,7 +2616,7 @@ function secimHesapla(s) {
     const d = vaatDurumu(v, s);
     return { ...v, ...d };
   });
-  const vaatPuan = vaatDurum.reduce((a, v) => a + (v.tutuldu ? VAAT_ODUL : -VAAT_CEZA), 0);
+  const vaatPuan = vaatDurum.reduce((a, v) => a + (v.tutuldu ? vaatOdul(v) : -vaatCeza(v)), 0);
   const oy = Math.max(0, Math.min(100, temel + vaatPuan));
   return { performans, temel, vaatDurum, vaatPuan, oy, kazandi: oy > 50 };
 }
@@ -2675,7 +2711,12 @@ function VaatTakip({ s }) {
           KAMPANYA SÖZLERİN
         </span>
         <span className="mono" style={{ fontSize: 9, color: C.sonuk }}>
-          SEÇİMDE ±28 PUAN
+          SEÇİMDE{" "}
+          {s.vaatler.reduce((a, vid) => {
+            const v = VAATLER.find((x) => x.id === vid);
+            return a + vaatOdul(v) + vaatCeza(v);
+          }, 0)}{" "}
+          PUAN
         </span>
       </div>
 
@@ -2700,7 +2741,7 @@ function VaatTakip({ s }) {
                   background: d.tutuldu ? "rgba(61,220,132,.12)" : "rgba(201,162,39,.12)",
                 }}
               >
-                {d.tutuldu ? `+${VAAT_ODUL}` : `−${VAAT_CEZA}`}
+                {d.tutuldu ? `+${vaatOdul(v)}` : `−${vaatCeza(v)}`}
               </span>
             </div>
 
@@ -3056,8 +3097,8 @@ export default function TheDirective() {
               oyToplam: oy.toplam,
               oyGereken: oy.gereken,
               durum: "onaylandi",
-              yururlukTuru: yeni.tur + 2,
-              tamamlanmaTuru: yeni.tur + 7,
+              yururlukTuru: yeni.tur + KANUN_YURURLUK,
+              tamamlanmaTuru: yeni.tur + KANUN_TAMAMLANMA,
             },
           ],
         };
@@ -3408,7 +3449,7 @@ export default function TheDirective() {
                   ))}
                 </div>
                 <div className="mono" style={{ fontSize: 10, color: "#6B6250", lineHeight: 1.6 }}>
-                  {eylem.tur === "KANUN" && `Yürürlük: tur ${s.tur + 2} · Tamamlanma: tur ${s.tur + 7}`}
+                  {eylem.tur === "KANUN" && `Yürürlük: tur ${s.tur + KANUN_YURURLUK} · Tamamlanma: tur ${s.tur + KANUN_TAMAMLANMA}`}
                   {eylem.tur === "KARARNAME" && `Yürürlük: tur ${s.tur + 1}`}
                   {eylem.tur === "OPERASYON" && "Anında uygulandı"}
                 </div>
@@ -4210,7 +4251,7 @@ function SecimEkrani({ s, onYeniden }) {
                 <Satir
                   key={v.id}
                   ad={`${v.tutuldu ? "✓" : "✗"} ${v.ad}`}
-                  deger={v.tutuldu ? `+${VAAT_ODUL}` : `−${VAAT_CEZA}`}
+                  deger={v.tutuldu ? `+${vaatOdul(v)}` : `−${vaatCeza(v)}`}
                   renk={v.tutuldu ? C.arti : C.eksi}
                 />
               ))}
