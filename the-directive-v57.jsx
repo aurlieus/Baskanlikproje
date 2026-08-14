@@ -232,30 +232,30 @@ const VAATLER = [
     ad: "Sağlığı herkese ulaştıracağım",
     kisa: "Halk sağlığı",
     kategori: "Sağlık",
-    kosulMetni: "Halk sağlığı 70'e ulaşmalı",
+    kosulMetni: "Halk sağlığı, başlangıcın 12 puan üstüne çıkmalı",
     odul: 8,
     ceza: 6,
-    olc: (s) => ({ simdi: s.kpi.halkSagligi, hedef: 70 }),
+    olc: (s) => ({ simdi: s.kpi.halkSagligi, hedef: s.baslangic.halkSagligi + 12 }),
   },
   {
     id: "guvenlik",
     ad: "Sokakları güvene kavuşturacağım",
     kisa: "İstikrar",
     kategori: "İç Güvenlik",
-    kosulMetni: "İstikrar 68'e ulaşmalı",
+    kosulMetni: "İstikrar, başlangıcın 8 puan üstüne çıkmalı",
     odul: 8,
     ceza: 6,
-    olc: (s) => ({ simdi: s.ist.istikrar, hedef: 68 }),
+    olc: (s) => ({ simdi: s.ist.istikrar, hedef: s.baslangic.istikrar + 8 }),
   },
   {
     id: "itibar",
     ad: "Ülkeyi dünyada saygın kılacağım",
     kisa: "Küresel itibar",
     kategori: "Diplomasi",
-    kosulMetni: "Küresel itibar 70'e ulaşmalı",
+    kosulMetni: "Küresel itibar, başlangıcın 15 puan üstüne çıkmalı",
     odul: 8,
     ceza: 6,
-    olc: (s) => ({ simdi: s.ist.kuresel, hedef: 70 }),
+    olc: (s) => ({ simdi: s.ist.kuresel, hedef: s.baslangic.kuresel + 15 }),
   },
   {
     id: "vergi",
@@ -2166,14 +2166,74 @@ const BASLANGIC_KOLLAR = {
   basinDenetimi: 40,
 };
 
-function yeniOyun(secilenVaatler) {
-  const kpi = { gsyih: 55, istihdam: 52, halkSagligi: 58, hazirlik: 55 };
+// Devraldığın ülke. Bir oyunda içeriğin ancak üçte biri görülüyor; aynı içeriği
+// farklı bir baskı sırasıyla oynatmak, yeni eylem yazmadan tekrar oynanabilirlik
+// kazandırmanın en ucuz yolu. Her senaryo bir göstergeyi bilerek kırar ve
+// karşılığında başka birini güçlendirir — kolay/zor değil, farklı.
+//
+// Vaat hedefleri başlangıca göreli olduğu için senaryolar vaat adaletini
+// bozmaz: küresel itibarı 38'de başlayan bir ülkede hedef de birlikte iner.
+const BASLANGIC_SENARYOLARI = [
+  {
+    id: "dengeli",
+    zorluk: "Standart",
+    ad: "Dengeli Devir",
+    ozet: "Ne kriz ne bolluk",
+    aciklama:
+      "Devir teslim sorunsuz geçti. Ne devraldığın bir enkaz var ne de hazır bir zafer. Yolu kendin çizeceksin.",
+    durum: {},
+  },
+  {
+    id: "yipranmis",
+    zorluk: "Çok zor",
+    ad: "Yıpranmış Devir",
+    ozet: "Kasa da boş, sabır da",
+    aciklama:
+      "Önceki yönetim kasayı boşalttı ve karşılığında hiçbir şey alamadı. Halkın sabrı bitmiş, hazine dip seviyede. Önce güveni geri kazanman gerek.",
+    // Onay bilerek koalisyon eşiğinin altında: sandalyen ilk turdan itibaren
+    // erimeye başlar, yani halkı kazanmak yalnızca seçim için değil, yönetebilmek
+    // için de acil. Düşük hazine tek başına baskı yaratmıyor — eylemler nüfuzla
+    // ödeniyor — bu yüzden senaryonun asıl ağırlığı onaydadır.
+    durum: { ist: { hazine: 20, onay: 53, istikrar: 57 } },
+  },
+  {
+    id: "bolunmus",
+    zorluk: "Zor",
+    ad: "Bölünmüş Meclis",
+    ozet: "Çoğunluk yok",
+    aciklama:
+      "Seçimi kazandın ama meclisi kazanamadın. Çoğunluğun yok: geçirmek istediğin her kanun önce pazarlık masasından geçecek.",
+    durum: { koalisyon: 46, kollar: { partiSadakati: 58 }, ist: { istikrar: 64 } },
+  },
+  {
+    id: "yalniz",
+    zorluk: "Zor",
+    ad: "Yalnız Ülke",
+    ozet: "Dışarıda kimse yok",
+    aciklama:
+      "Ülke uzun süredir masaların dışında. Sınırların içinde düzen var, dışında telefonlarına çıkan yok.",
+    durum: { ist: { kuresel: 38, istikrar: 64 }, kpi: { hazirlik: 62 } },
+  },
+];
+
+function senaryoBul(id) {
+  return BASLANGIC_SENARYOLARI.find((x) => x.id === id) || BASLANGIC_SENARYOLARI[0];
+}
+
+function yeniOyun(secilenVaatler, senaryoId) {
+  const senaryo = senaryoBul(senaryoId);
+  const y = senaryo.durum;
+  const kpi = { gsyih: 55, istihdam: 52, halkSagligi: 58, hazirlik: 55, ...(y.kpi || {}) };
+  const ist = { onay: 58, hazine: 40, istikrar: 60, kuresel: 55, nufuz: 14, ...(y.ist || {}) };
+  const kollar = { ...BASLANGIC_KOLLAR, ...(y.kollar || {}) };
+  const koalisyon = y.koalisyon != null ? y.koalisyon : 51;
   return {
     faz: "panel",
     tur: 1,
-    ist: { onay: 58, hazine: 40, istikrar: 60, kuresel: 55, nufuz: 14 },
+    senaryoId: senaryo.id,
+    ist,
     kpi,
-    koalisyon: 51, // tam olarak yeter sayı — kıl payı çoğunluk
+    koalisyon, // varsayılanda tam olarak yeter sayı — kıl payı çoğunluk
     koalisyonBirikim: 0, // tam sandalyeye ulaşmamış siyasi baskı
     suphe: 0,
     supheGorundu: false, // ilk riskli hamleye kadar panelde gizli
@@ -2181,8 +2241,8 @@ function yeniOyun(secilenVaatler) {
     kademeGecmisi: [],   // hangi şüphe kademeleri yaşandı
     muhalefetTetiklendi: false, // muhalefet hamlesi oyunda bir kez yaşandı mı
     muhalefetEylemId: null,     // hangi sahne tetiklendi
-    kollar: { ...BASLANGIC_KOLLAR },
-    onceki: { onay: 58, hazine: 40, istikrar: 60, kuresel: 55, nufuz: 14, koalisyon: 51 },
+    kollar,
+    onceki: { ...ist, koalisyon },
     nakit: { giren: 0, cikan: 0 }, // son kapanıştan bu yana hazine hareketi
     kolDegisimi: {}, // bu turda kaç puan oynandı
     kullanim: {}, // eylemId → başarıyla uygulandığı tur
@@ -2193,7 +2253,9 @@ function yeniOyun(secilenVaatler) {
     arsiv: [],
     gunluk: [],
     vaatler: secilenVaatler,
-    baslangic: { ...kpi, ...BASLANGIC_KOLLAR },
+    // Vaat hedefleri buradan okunur; istikrar ve küresel itibar da dahil edildi
+    // ki mutlak hedefler senaryolarda haksızlık yaratmasın.
+    baslangic: { ...kpi, ...kollar, istikrar: ist.istikrar, kuresel: ist.kuresel },
   };
 }
 
@@ -3259,6 +3321,7 @@ export default function TheDirective() {
   const [bolumSekme, setBolumSekme] = useState("eylemler");
   const [iptalAdayi, setIptalAdayi] = useState(null);
   const [secilen, setSecilen] = useState([]);
+  const [secilenSenaryo, setSecilenSenaryo] = useState(BASLANGIC_SENARYOLARI[0].id);
   const [s, setS] = useState(null);
   const [bolumK, setBolumK] = useState(null);
   const [eylemId, setEylemId] = useState(null);
@@ -3276,7 +3339,7 @@ export default function TheDirective() {
     kayitOku().then((paket) => {
       if (iptal) return;
       setKayit(paket);
-      setFaz(paket ? "acilis" : "vaatler");
+      setFaz(paket ? "acilis" : "senaryo");
     });
     return () => {
       iptal = true;
@@ -3286,7 +3349,7 @@ export default function TheDirective() {
   // Oyun ilerledikçe sessizce kaydedilir; dönem bitince kayıt silinir.
   useEffect(() => {
     if (!s) return;
-    if (faz === "yukleniyor" || faz === "acilis" || faz === "vaatler") return;
+    if (faz === "yukleniyor" || faz === "acilis" || faz === "senaryo" || faz === "vaatler") return;
     if (faz === "secim" || faz === "azil") {
       kayitSil();
       return;
@@ -3303,7 +3366,7 @@ export default function TheDirective() {
   function basla() {
     kayitSil();
     setKayit(null);
-    setS(yeniOyun(secilen));
+    setS(yeniOyun(secilen, secilenSenaryo));
     setFaz("panel");
   }
 
@@ -3340,7 +3403,8 @@ export default function TheDirective() {
     setOylama(null);
     setIptalAdayi(null);
     setBolumSekme("eylemler");
-    setFaz("vaatler");
+    setSecilenSenaryo(BASLANGIC_SENARYOLARI[0].id);
+    setFaz("senaryo");
   }
 
   function vaatSec(id) {
@@ -3609,7 +3673,7 @@ export default function TheDirective() {
           </div>
 
           <button
-            onClick={() => { setKayit(null); setFaz("vaatler"); }}
+            onClick={() => { setKayit(null); setFaz("senaryo"); }}
             className="btn-ikincil w-full py-3 rounded-lg"
           >
             Yeni göreve başla
@@ -3622,11 +3686,76 @@ export default function TheDirective() {
     );
   }
 
+  // ---------- DEVRALDIĞIN ÜLKE ----------
+  if (faz === "senaryo") {
+    return (
+      <Kabuk>
+        <div className="max-w-md mx-auto px-5 pt-12 pb-10">
+          <div className="mono mb-2" style={{ fontSize: 10, color: C.pirinc, letterSpacing: "0.2em" }}>
+            DEVİR TESLİM
+          </div>
+          <h1 className="sans font-extrabold mb-1" style={{ fontSize: 34, color: "#F2F4F8", letterSpacing: "-0.02em" }}>
+            The Directive
+          </h1>
+          <p className="sans mb-8" style={{ fontSize: 13, color: C.solgun, lineHeight: 1.6 }}>
+            Göreve başlamadan önce devraldığın ülkeyi seç. Her biri seni farklı bir
+            köşeden sıkıştırır — aynı araçlarla, farklı bir sırayla uğraşırsın.
+          </p>
+
+          <div className="flex flex-col gap-2.5 mb-8">
+            {BASLANGIC_SENARYOLARI.map((sn) => {
+              const aktif = secilenSenaryo === sn.id;
+              return (
+                <button
+                  key={sn.id}
+                  onClick={() => setSecilenSenaryo(sn.id)}
+                  className="kutu p-4 text-left transition-colors"
+                  style={{ borderColor: aktif ? C.pirinc : C.kenar }}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="sans font-semibold" style={{ fontSize: 15, color: "#F2F4F8" }}>
+                      {sn.ad}
+                    </span>
+                    <span
+                      className="mono px-1.5 py-0.5 rounded flex-shrink-0"
+                      style={{ fontSize: 9, color: C.sonuk, border: `1px solid ${C.kenar}` }}
+                    >
+                      {sn.zorluk.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="mono mb-2" style={{ fontSize: 10, color: C.pirinc, letterSpacing: "0.06em" }}>
+                    {sn.ozet}
+                  </div>
+                  {aktif && (
+                    <p className="sans acilir" style={{ fontSize: 12.5, color: C.solgun, lineHeight: 1.6 }}>
+                      {sn.aciklama}
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <button onClick={() => setFaz("vaatler")} className="btn-ana w-full py-3.5 rounded-lg">
+            Devam
+          </button>
+        </div>
+      </Kabuk>
+    );
+  }
+
   // ---------- VAAT SEÇİMİ ----------
   if (faz === "vaatler") {
     return (
       <Kabuk>
         <div className="max-w-md mx-auto px-5 pt-12 pb-10">
+          <button
+            onClick={() => setFaz("senaryo")}
+            className="btn-ikincil px-3 py-1.5 rounded-lg mb-4 inline-flex items-center gap-1.5"
+            style={{ fontSize: 12 }}
+          >
+            <ArrowLeft size={13} /> {senaryoBul(secilenSenaryo).ad}
+          </button>
           <div className="mono mb-2" style={{ fontSize: 10, color: C.pirinc, letterSpacing: "0.2em" }}>
             KAMPANYA DOSYASI
           </div>
