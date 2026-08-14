@@ -180,6 +180,77 @@ const KOALISYON_ESIGI = 60;
 const VAAT_BASKI_TURU = 6;
 const VAAT_BASKI_KAYMA = 0.08;
 
+// ---------- SEÇMEN BLOKLARI ----------
+// Onay tek bir sayıydı ve oyundaki 95 etki girdisinin dokunduğu şey oydu: her
+// hamle aynı havuzu dolduruyor ya da boşaltıyordu, yani "herkesi aynı anda
+// memnun et" diye bir strateji vardı. Blok sistemi bunu kırar — kimi memnun
+// ettiğin, ne kadar memnun ettiğin kadar önemli hale gelir.
+//
+// ÖNEMLİ: `onay` ARTIK TÜRETİLMİŞ BİR DEĞERDİR — blokların ağırlıklı
+// ortalamasıdır. Böylece onay'ı okuyan her şey (seçim formülü, koalisyon
+// kayması, nüfuz geliri) hiç değişmeden çalışmaya devam eder. Bir etki
+// dağıtılırken ağırlıklı ortalaması korunacak şekilde normalize edilir, yani
+// toplamda onay eskisi gibi hareket eder; değişen, içindeki dağılımdır.
+const SECMEN_BLOKLARI = [
+  { k: "kentli", ad: "Kentli", kisa: "Kentli", agirlik: 0.35, baslangic: 54 },
+  { k: "muhafazakar", ad: "Muhafazakâr", kisa: "Muhafazakâr", agirlik: 0.35, baslangic: 62 },
+  { k: "emekci", ad: "Emekçi", kisa: "Emekçi", agirlik: 0.3, baslangic: 58 },
+];
+
+// Başlangıçta bloklar eşit değil — devraldığın bir seçmen bileşimi var.
+// 0.35×54 + 0.35×62 + 0.30×58 = 58.0, yani toplam onay yine tam 58.
+const BLOK_TOPLAM = (b) =>
+  SECMEN_BLOKLARI.reduce((a, x) => a + x.agirlik * (b[x.k] ?? 0), 0);
+
+// Hangi iş kimin hoşuna gider. Sayılar ham eğilimdir; dağıtımda normalize
+// edilirler, bu yüzden mutlak büyüklükleri değil birbirlerine oranı önemlidir.
+// Negatif değer "bu blok bundan rahatsız olur" demektir.
+// Vektörlerin ağırlıklı toplamı bilerek 1'e yakın tutulur. Aksi halde normalize
+// ederken bölen küçülür ve dağıtım şişer: ilk taslakta kutuplaşmış bir kategori
+// +3'lük onayı tek bloğa +11 olarak yazıyordu. Bu hem oyunun «küçük sayılar»
+// ilkesine aykırı, hem de tehlikeli — blok 0/100'e çarpıp kırpılırsa ağırlıklı
+// ortalamanın korunması garantisi bozulur. Toplam ≈1 iken en yoğun blok bile
+// ortalamanın ~1.75 katını alır, o kadar.
+const NOTR_EGILIM = { kentli: 1, muhafazakar: 1, emekci: 1 };
+const KATEGORI_EGILIMI = {
+  "Vergi": { kentli: 0.7, muhafazakar: 0.9, emekci: 1.5 },
+  "İstihdam": { kentli: 0.8, muhafazakar: 0.85, emekci: 1.45 },
+  "Sağlık": { kentli: 0.95, muhafazakar: 0.85, emekci: 1.25 },
+  "İç Güvenlik": { kentli: 0.3, muhafazakar: 1.7, emekci: 1.0 },
+  "Savunma": { kentli: 0.5, muhafazakar: 1.6, emekci: 0.9 },
+  "Diplomasi": { kentli: 1.7, muhafazakar: 0.5, emekci: 0.8 },
+  "Denetim": { kentli: 1.7, muhafazakar: 0.55, emekci: 0.75 },
+  "Olağanüstü Yetki": { kentli: 0.1, muhafazakar: 1.75, emekci: 1.05 },
+  "Parti": { kentli: 0.85, muhafazakar: 1.15, emekci: 1.0 },
+  "Muhalefet": { kentli: 1.25, muhafazakar: 0.85, emekci: 0.9 },
+  // Gizli iş halka duyurulmaz, dolayısıyla onay etkisi zaten küçüktür; iş
+  // ifşa olduğunda faturayı en çok kentli seçmen keser.
+  "Gizli İşler": { kentli: 1.35, muhafazakar: 0.8, emekci: 0.85 },
+};
+
+// Politika kollarının her turki onay etkisi de bloklara dağıtılır.
+const KOL_EGILIMI = {
+  sosyalYardim: { kentli: 0.75, muhafazakar: 0.9, emekci: 1.45 },
+  gelirVergisi: { kentli: 0.85, muhafazakar: 0.9, emekci: 1.35 },
+  hukumetSeffafligi: { kentli: 1.7, muhafazakar: 0.55, emekci: 0.75 },
+};
+
+// Bir onay değişimini bloklara dağıtır. Ağırlıklı ortalama korunur: dönen
+// deltaların blok ağırlıklarıyla ortalaması tam olarak `v`ye eşittir, bu yüzden
+// toplam onay eski davranışını sürdürür.
+function blokDagit(v, egilim) {
+  const e = egilim || NOTR_EGILIM;
+  const olcek = BLOK_TOPLAM(e);
+  // Eğilimlerin ağırlıklı toplamı sıfıra çok yaklaşırsa normalize edilemez;
+  // böyle bir tanım yazılırsa sessizce bozulmasın diye nötre düşülür.
+  if (!olcek || Math.abs(olcek) < 0.05) return blokDagit(v, NOTR_EGILIM);
+  const pay = {};
+  SECMEN_BLOKLARI.forEach((b) => {
+    pay[b.k] = (v * (e[b.k] ?? 0)) / olcek;
+  });
+  return pay;
+}
+
 // ---------- İSTATİSTİK TANIMLARI ----------
 const ISTATISTIKLER = [
   { k: "onay", ad: "Onay", ikon: ThumbsUp },
@@ -2227,12 +2298,24 @@ function yeniOyun(secilenVaatler, senaryoId) {
   const ist = { onay: 58, hazine: 40, istikrar: 60, kuresel: 55, nufuz: 14, ...(y.ist || {}) };
   const kollar = { ...BASLANGIC_KOLLAR, ...(y.kollar || {}) };
   const koalisyon = y.koalisyon != null ? y.koalisyon : 51;
+
+  // Bloklar, senaryonun onay değeri neyse ona göre topluca kaydırılır: seçmen
+  // bileşimi korunur (kentli hep en soğuk, muhafazakâr hep en sıcak başlar),
+  // yalnızca genel seviye senaryoya uyar. Ağırlıklı ortalaması ist.onay'a eşit.
+  const kayma = ist.onay - BLOK_TOPLAM(
+    Object.fromEntries(SECMEN_BLOKLARI.map((b) => [b.k, b.baslangic]))
+  );
+  const bloklar = Object.fromEntries(
+    SECMEN_BLOKLARI.map((b) => [b.k, kirp(b.baslangic + kayma)])
+  );
+  ist.onay = BLOK_TOPLAM(bloklar);
   return {
     faz: "panel",
     tur: 1,
     senaryoId: senaryo.id,
     ist,
     kpi,
+    bloklar,
     koalisyon, // varsayılanda tam olarak yeter sayı — kıl payı çoğunluk
     koalisyonBirikim: 0, // tam sandalyeye ulaşmamış siyasi baskı
     suphe: 0,
@@ -2384,16 +2467,31 @@ function verimKatsayisi(anahtar, mevcut) {
   return Math.max(0.25, 1 - (mevcut - VERIM_ESIGI) / 40);
 }
 
-function etkiUygula(s, etki) {
+// `egilim` verilmezse nötr dağıtım yapılır — yani onay tüm bloklara eşit iner
+// ve toplam davranış blok sistemi eklenmeden önceki haliyle birebir aynı olur.
+// Bu bilinçli bir varsayılan: eğilim geçirmeyi unuttuğum bir çağrı yeri
+// dengeyi sessizce bozmaz, yalnızca ayrımı kaybeder.
+function etkiUygula(s, etki, egilim) {
   const ist = { ...s.ist };
   const kpi = { ...s.kpi };
+  const bloklar = { ...(s.bloklar || {}) };
   let koalisyon = s.koalisyon;
   let suphe = s.suphe || 0;
   let supheGorundu = s.supheGorundu || false;
   const nakit = { ...(s.nakit || { giren: 0, cikan: 0 }) };
 
   Object.entries(etki).forEach(([k, v]) => {
-    if (k === "hazine") {
+    if (k === "onay") {
+      // Onay doğrudan yazılmaz; bloklara dağıtılır ve onlardan türetilir.
+      const pay = blokDagit(v, egilim);
+      SECMEN_BLOKLARI.forEach((b) => {
+        const d = pay[b.k];
+        bloklar[b.k] = kirp(
+          bloklar[b.k] + (d > 0 ? d * verimKatsayisi("onay", bloklar[b.k]) : d)
+        );
+      });
+      ist.onay = BLOK_TOPLAM(bloklar);
+    } else if (k === "hazine") {
       // Kasaya giren ve çıkan ayrı ayrı tutulur ki panelde döküm gösterilebilsin.
       const oncekiHazine = ist.hazine;
       ist.hazine = Math.max(0, ist.hazine + v);
@@ -2415,7 +2513,7 @@ function etkiUygula(s, etki) {
     }
   });
 
-  return { ...s, ist, kpi, koalisyon, suphe, supheGorundu, nakit };
+  return { ...s, ist, kpi, bloklar, koalisyon, suphe, supheGorundu, nakit };
 }
 
 // Deterministik sonuç: skoru yüksek olan gerçekleşir (Doküman Bölüm 5)
@@ -2495,12 +2593,22 @@ function turSonu(s) {
   rapor.gider = Math.round((sosyalGider + guvenlikGider + askeriGider) * 10) / 10;
   rapor.giderKalem = { sosyal: sosyalGider, guvenlik: guvenlikGider, askeri: askeriGider };
 
+  // Kolların onay etkisi kol kol tutulur: üçü de onaya yazılır ama üçü farklı
+  // seçmene hitap eder — sosyal yardım emekçiye, şeffaflık kentliye. Tek bir
+  // toplam sayı olarak dağıtılsalardı bu ayrım kaybolurdu.
+  const kolOnayKalem = {
+    sosyalYardim: (yeni.kollar.sosyalYardim - BASLANGIC_KOLLAR.sosyalYardim) / 14,
+    gelirVergisi: -(yeni.kollar.gelirVergisi - BASLANGIC_KOLLAR.gelirVergisi) / 12,
+    hukumetSeffafligi:
+      (yeni.kollar.hukumetSeffafligi - BASLANGIC_KOLLAR.hukumetSeffafligi) / 25,
+  };
+
   // Kolların istatistiklere etkisi
   const kolEtki = {
     onay:
-      (yeni.kollar.sosyalYardim - BASLANGIC_KOLLAR.sosyalYardim) / 14 -
-      (yeni.kollar.gelirVergisi - BASLANGIC_KOLLAR.gelirVergisi) / 12 +
-      (yeni.kollar.hukumetSeffafligi - BASLANGIC_KOLLAR.hukumetSeffafligi) / 25,
+      kolOnayKalem.sosyalYardim +
+      kolOnayKalem.gelirVergisi +
+      kolOnayKalem.hukumetSeffafligi,
     istikrar:
       (yeni.kollar.guvenlikButcesi - BASLANGIC_KOLLAR.guvenlikButcesi) / 14 +
       (yeni.kollar.disPolitika - BASLANGIC_KOLLAR.disPolitika) / 22,
@@ -2534,7 +2642,14 @@ function turSonu(s) {
     kuresel: Math.round(kolEtki.kuresel * 10) / 10,
     hazirlik: Math.round(kolEtki.hazirlik * 10) / 10,
   };
-  yeni = etkiUygula(yeni, kolEtki);
+  yeni = etkiUygula(yeni, {
+    istikrar: kolEtki.istikrar,
+    kuresel: kolEtki.kuresel,
+    hazirlik: kolEtki.hazirlik,
+  });
+  Object.entries(kolOnayKalem).forEach(([kol, v]) => {
+    if (v) yeni = etkiUygula(yeni, { onay: v }, KOL_EGILIMI[kol]);
+  });
 
   // 3) Yıpranma — hiçbir hükümet yerinde sayarak ayakta kalamaz.
   //    Oyunun varsayılan gidişatı düşüştür; oyuncunun işi bununla savaşmaktır.
@@ -2554,7 +2669,7 @@ function turSonu(s) {
   const bekleyen = [];
   (yeni.bekleyenEtkiler || []).forEach((b) => {
     if (yeni.tur + 1 >= b.tur) {
-      yeni = etkiUygula(yeni, b.etki);
+      yeni = etkiUygula(yeni, b.etki, KATEGORI_EGILIMI[b.kategori]);
       rapor.haberler.push({
         tip: "gecikmeli",
         ad: b.kaynak,
@@ -2575,11 +2690,12 @@ function turSonu(s) {
 
   yeni.belgeler.forEach((b) => {
     if (b.durum === "onaylandi" && gelecekTur >= b.yururlukTuru) {
-      yeni = etkiUygula(yeni, b.etki);
+      yeni = etkiUygula(yeni, b.etki, KATEGORI_EGILIMI[b.kategori]);
       if (b.gecikmeli) {
         bekleyen.push({
           tur: gelecekTur + ETKI_GECIKMESI,
           kaynak: b.ad,
+          kategori: b.kategori,
           metin: b.gecikmeliMetin || "Düzenlemenin asıl etkisi şimdi hissedildi.",
           etki: b.gecikmeli,
           gizli: !!b.gizli,
@@ -2602,7 +2718,7 @@ function turSonu(s) {
       if (b.tamamlanmaTuru) belgeler.push({ ...b, durum: "yururlukte" });
       else arsiv.push({ ...b, durum: "tamamlandi" });
     } else if (b.durum === "yururlukte" && gelecekTur >= b.tamamlanmaTuru) {
-      yeni = etkiUygula(yeni, b.etki);
+      yeni = etkiUygula(yeni, b.etki, KATEGORI_EGILIMI[b.kategori]);
       rapor.haberler.push({
         tip: "tamamlanma",
         ad: b.ad,
@@ -3078,6 +3194,56 @@ function Degisim({ fark, taban, yuzdeGoster }) {
 }
 
 // Kampanya sözlerinin canlı takibi — seçimde ±30 puan buna bağlı.
+// Onay kutusunun altındaki seçmen dökümü. Onay tek başına ortalamadır; asıl
+// bilgi kimin memnun kimin küs olduğudur — bu şerit onu tek bakışta verir.
+function BlokSerit({ s }) {
+  const bloklar = s.bloklar || {};
+  const degerler = SECMEN_BLOKLARI.map((b) => bloklar[b.k] ?? 0);
+  const enYuksek = Math.max(...degerler);
+  const enDusuk = Math.min(...degerler);
+
+  return (
+    <div className="kutu p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <span className="mono" style={{ fontSize: 10, color: C.solgun, letterSpacing: "0.1em" }}>
+          SEÇMEN
+        </span>
+        <span className="mono" style={{ fontSize: 9, color: C.sonuk }}>
+          ONAY {Math.round(s.ist.onay)} · ORTALAMA
+        </span>
+      </div>
+
+      {SECMEN_BLOKLARI.map((b) => {
+        const deger = bloklar[b.k] ?? 0;
+        const enIyi = deger === enYuksek && enYuksek !== enDusuk;
+        const enKotu = deger === enDusuk && enYuksek !== enDusuk;
+        const renk = enIyi ? C.arti : enKotu ? C.eksi : C.solgun;
+        return (
+          <div key={b.k} className="mb-2.5 last:mb-0">
+            <div className="flex items-center justify-between mb-1">
+              <span className="sans" style={{ fontSize: 12, color: "#F2F4F8" }}>
+                {b.ad}
+                <span className="mono" style={{ fontSize: 9, color: C.sonuk }}>
+                  {" "}%{Math.round(b.agirlik * 100)}
+                </span>
+              </span>
+              <span className="mono tabular-nums" style={{ fontSize: 12, color: renk }}>
+                {Math.round(deger)}
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1C2436" }}>
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${kirp(deger)}%`, background: renk, transition: "width .3s ease" }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function VaatTakip({ s }) {
   return (
     <div className="kutu p-4 mb-6">
@@ -3470,6 +3636,7 @@ export default function TheDirective() {
               eylemId: eylem.id,
               ad: eylem.ad,
               tur: eylem.tur,
+              kategori: eylem.kategori,
               etki: kazanan.etki,
               sonucMetni: kazanan.metin,
               alinti: kazanan.alinti,
@@ -3502,6 +3669,7 @@ export default function TheDirective() {
             eylemId: eylem.id,
             ad: eylem.ad,
             tur: eylem.tur,
+            kategori: eylem.kategori,
             etki: kazanan.etki,
             sonucMetni: kazanan.metin,
             alinti: kazanan.alinti,
@@ -3517,7 +3685,7 @@ export default function TheDirective() {
       setSonuc({ ...h, kazanan, gecti: true });
     } else {
       setOylama(null);
-      yeni = etkiUygula(yeni, kazanan.etki);
+      yeni = etkiUygula(yeni, kazanan.etki, KATEGORI_EGILIMI[eylem.kategori]);
       const haberKuyrugu = [
         ...(yeni.bekleyenHaberler || []),
         {
@@ -3538,6 +3706,7 @@ export default function TheDirective() {
             {
               tur: yeni.tur + ETKI_GECIKMESI,
               kaynak: eylem.ad,
+              kategori: eylem.kategori,
               metin: kazanan.gecikmeliMetin || "Operasyonun asıl etkisi şimdi hissedildi.",
               etki: kazanan.gecikmeli,
               gizli,
@@ -3586,13 +3755,14 @@ export default function TheDirective() {
     const secenek = muhalefetEylem.secenekler[secenekIdx];
     const h = sonucHesapla(secenek, s);
     const kazanan = secenek.sonuclar[h.kazananIdx];
-    let yeni = etkiUygula(s, kazanan.etki);
+    let yeni = etkiUygula(s, kazanan.etki, KATEGORI_EGILIMI[muhalefetEylem.kategori]);
     const kuyruk = kazanan.gecikmeli
       ? [
           ...(yeni.bekleyenEtkiler || []),
           {
             tur: yeni.tur + ETKI_GECIKMESI,
             kaynak: muhalefetEylem.ad,
+            kategori: muhalefetEylem.kategori,
             metin: kazanan.gecikmeliMetin || "Uzlaşmanın asıl etkisi şimdi hissedildi.",
             etki: kazanan.gecikmeli,
             gizli: gizliMi(muhalefetEylem, secenek, kazanan),
@@ -4379,6 +4549,8 @@ export default function TheDirective() {
           />
         </div>
 
+        <BlokSerit s={s} />
+
         <VaatTakip s={s} />
 
         <div className="mono mb-3" style={{ fontSize: 10, color: C.solgun, letterSpacing: "0.1em" }}>
@@ -4775,6 +4947,14 @@ function SecimEkrani({ s, onYeniden }) {
                 OYUNU NE BELİRLEDİ
               </div>
               <Satir ad="Halkın onayı" deger={Math.round(s.ist.onay)} />
+              {SECMEN_BLOKLARI.map((b) => (
+                <Satir
+                  key={b.k}
+                  ad={`   ${b.ad}`}
+                  deger={Math.round((s.bloklar || {})[b.k] ?? 0)}
+                  renk={C.sonuk}
+                />
+              ))}
               <Satir ad="Ülkenin istikrarı" deger={Math.round(s.ist.istikrar)} />
               <Satir ad="Dış itibar" deger={Math.round(s.ist.kuresel)} />
               <div className="border-t my-2.5" style={{ borderColor: C.kenar }} />
