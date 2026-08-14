@@ -1964,6 +1964,21 @@ const BOLUMLER = {
   },
 };
 
+// Muhalefetin bir adı olsun. Seçim gecesinde karşındaki yalnızca bir yüzde
+// olarak duruyordu; oyun boyunca sana karşı hamle yapan da isimsizdi. Tek bir
+// isim, hem muhalefet sahnesini hem seçim gecesini somutlaştırıyor — mekanik
+// maliyeti sıfır, anlatısal karşılığı yüksek.
+//
+// Bütçe komisyonu geçmişi bilerek seçildi: muhalefetin ilk hamlesi
+// (siy-muh-1) bütçe uzlaşmasıdır, yani karşındaki kendi alanında geliyor.
+const MUHALEFET_LIDERI = {
+  ad: "Nuray Ergin",
+  soyad: "Ergin",
+  unvan: "Ana muhalefet lideri",
+  arkaPlan:
+    "Üç dönem milletvekilliği yaptı, iki yıl bütçe komisyonuna başkanlık etti. Sayıları senden iyi bilir.",
+};
+
 // ---------- MUHALEFET HAMLESİ (Doküman Bölüm 15) ----------
 // Oyunun en çok dile getirilen tasarım açığı: hiçbir şey oyuncuya karşı
 // kendiliğinden hareket etmiyordu. Şüphe göstergesi içsel bir karşı-güçtü
@@ -2823,6 +2838,94 @@ function secimHesapla(s) {
   const vaatPuan = vaatDurum.reduce((a, v) => a + (v.tutuldu ? vaatOdul(v) : -vaatCeza(v)), 0);
   const oy = Math.max(0, Math.min(100, temel + vaatPuan));
   return { performans, temel, vaatDurum, vaatPuan, oy, kazandi: oy > 50 };
+}
+
+// Görev süresinin nasıl kapandığı. Eskiden tek bir ayrım vardı — seçildin ya da
+// kaybettin — ve şüphe izlencesi anlatısal karşılığını hiç almıyordu: temiz
+// yönetip %52 ile kazanmak, yetkileri askıya alınmışken %52 ile kazanmakla
+// aynı ekranı veriyordu. Artık iki eksen okunuyor: sandık ve arkanda bıraktığın
+// dosya. `mansetSec` gibi öncelik sıralıdır — en özel koşul en üstte.
+//
+// Görevden alınma (azil) burada yoktur; onun kendi ekranı var ve oyun orada
+// zaten bitmiştir.
+function finalKarti(s, r) {
+  const gecmis = s.kademeGecmisi || [];
+  const kisitlandi = gecmis.includes("kisitlama");
+  const sorusturuldu = gecmis.includes("sorusturma");
+  const L = MUHALEFET_LIDERI.soyad;
+
+  if (r.kazandi) {
+    // Dosya, sandıktan önce gelir: nasıl kazandığın ne kadar kazandığından önemli.
+    if (kisitlandi)
+      return {
+        kod: "karanlik-zafer",
+        baslik: "Kazandın, dosya kapanmadı",
+        metin: `Görev süren yenilendi ama yetkilerinin bir dönem askıya alındığı tutanakta duruyor. ${L} yenilgiyi kabul ederken kürsüde tek bir cümle kurdu: «Bu dosya bizimle bitmiyor.»`,
+        ton: "karanlik",
+      };
+    if (sorusturuldu)
+      return {
+        kod: "golgeli-zafer",
+        baslik: "Gölgede kalan zafer",
+        metin: `Sandık seni doğruladı, ama hakkında açılan soruşturmanın dosyası kapanmadı. Zaferin ilk günü, kutlamadan çok açıklamayla geçti.`,
+        ton: "golgeli",
+      };
+    if (r.oy >= 60)
+      return {
+        kod: "ezici-zafer",
+        baslik: "Ezici çoğunlukla yeniden seçildin",
+        metin: `Sonuç tartışmaya yer bırakmadı. ${L} sonuçları sandık kapanmadan kabul etti; muhalefet grubu gece yarısından önce dağıldı.`,
+        ton: "parlak",
+      };
+    if (r.oy <= 52)
+      return {
+        kod: "kil-payi-zafer",
+        baslik: "Kıl payı kazandın",
+        metin: `Fark birkaç puan. Beş yıl daha görevdesin, ama bu sonuç bir yetki değil bir uyarı — ${L} sandık başında bekleyen kalabalığa «Bu bitmedi» dedi.`,
+        ton: "solgun",
+      };
+    return {
+      kod: "temiz-zafer",
+      baslik: "Yeniden seçildin",
+      metin: `Görev süren yenilendi ve arkanda açık bir dosya kalmadı. Devir teslim yok; masandaki işler kaldığı yerden devam ediyor.`,
+      ton: "parlak",
+    };
+  }
+
+  if (kisitlandi)
+    return {
+      kod: "karanlik-yenilgi",
+      baslik: "Hem koltuğu hem dosyayı bıraktın",
+      metin: `Seçimi kaybettin ve yetkilerinin askıya alındığı dönem tutanakta kaldı. Görevi devralan ekip, ilk iş olarak o dosyayı istedi.`,
+      ton: "karanlik",
+    };
+  if (sorusturuldu)
+    return {
+      kod: "golgeli-yenilgi",
+      baslik: "Seçimi kaybettin, soruşturma sürüyor",
+      metin: `Sandık kararını verdi. Hakkındaki inceleme ise görevin bitmesiyle kapanmıyor — dosya yeni yönetime devredildi.`,
+      ton: "karanlik",
+    };
+  if (r.oy >= 47)
+    return {
+      kod: "kil-payi-yenilgi",
+      baslik: "Kıl payı kaybettin",
+      metin: `Birkaç puan yetmedi. ${L} kürsüye çıktığında salonun yarısı hâlâ senin adını sayıyordu.`,
+      ton: "solgun",
+    };
+  if (r.oy < 40)
+    return {
+      kod: "agir-yenilgi",
+      baslik: "Ağır bir yenilgi",
+      metin: `Sonuç tartışmasız. Beş yıl boyunca imzaladığın her belge bu gece yeniden konuşuluyor — hiçbiri lehine değil.`,
+      ton: "karanlik",
+    };
+  return {
+    kod: "yenilgi",
+    baslik: "Seçimi kaybettin",
+    metin: `Görev süren doldu ve sandık başkasını işaret etti. Devir teslim için üç hafta var.`,
+    ton: "solgun",
+  };
 }
 
 // ============================================================
@@ -4351,8 +4454,17 @@ export default function TheDirective() {
 
 // ---------- SEÇİM EKRANI (animasyonlu) ----------
 
+// Final kartının tonunu renge çevirir.
+const FINAL_RENK = {
+  parlak: C.arti,
+  solgun: C.pirinc,
+  golgeli: "#E0A33C",
+  karanlik: C.eksi,
+};
+
 function SecimEkrani({ s, onYeniden }) {
   const r = secimHesapla(s);
+  const final = finalKarti(s, r);
   const [asama, setAsama] = useState("sandik"); // sandik → sayim → sonuc
   const [acilan, setAcilan] = useState(0); // açılan sandık oranı 0–1
 
@@ -4432,12 +4544,13 @@ function SecimEkrani({ s, onYeniden }) {
         <h1
           className="sans font-extrabold mb-6"
           style={{
-            fontSize: 30,
+            fontSize: asama === "sonuc" ? 26 : 30,
             minHeight: 40,
-            color: asama === "sonuc" ? (r.kazandi ? C.arti : C.eksi) : "#F2F4F8",
+            lineHeight: 1.15,
+            color: asama === "sonuc" ? FINAL_RENK[final.ton] : "#F2F4F8",
           }}
         >
-          {asama === "sayim" ? "Sonuçlar geliyor…" : r.kazandi ? "Yeniden seçildin" : "Seçimi kaybettin"}
+          {asama === "sayim" ? "Sonuçlar geliyor…" : final.baslik}
         </h1>
 
         {/* Tek kart: sayım + sonuç */}
@@ -4476,7 +4589,7 @@ function SecimEkrani({ s, onYeniden }) {
 
             <div style={{ flex: 1, textAlign: "right" }}>
               <div className="mono mb-1" style={{ fontSize: 9, color: C.solgun, letterSpacing: "0.12em" }}>
-                MUHALEFET
+                {MUHALEFET_LIDERI.ad.toUpperCase()}
               </div>
               <div className="sans font-extrabold tabular-nums" style={{ fontSize: 36, color: !ondeyim ? C.eksi : "#8B93A7", lineHeight: 1 }}>
                 %{rakipYuzde.toFixed(1)}
@@ -4515,6 +4628,19 @@ function SecimEkrani({ s, onYeniden }) {
 
         {asama === "sonuc" && (
           <div className="acilir">
+            {/* Görev süresinin nasıl kapandığı — sandık ve arkanda kalan dosya birlikte */}
+            <div
+              className="kutu p-4 mb-3"
+              style={{ borderColor: FINAL_RENK[final.ton], background: "rgba(255,255,255,.015)" }}
+            >
+              <div className="mono mb-2" style={{ fontSize: 9.5, color: FINAL_RENK[final.ton], letterSpacing: "0.12em" }}>
+                GÖREV SÜRESİ KAPANDI
+              </div>
+              <p className="sans" style={{ fontSize: 13, color: C.solgun, lineHeight: 1.7 }}>
+                {final.metin}
+              </p>
+            </div>
+
             <div className="kutu p-4 mb-3">
               <div className="mono mb-2.5" style={{ fontSize: 9.5, color: C.solgun, letterSpacing: "0.12em" }}>
                 OYUNU NE BELİRLEDİ
@@ -4662,9 +4788,18 @@ function MuhalefetHamlesi({ eylem, s, sonuc, onSecenekSec, onDevam }) {
           <h2 className="mono font-bold mb-3" style={{ fontSize: 18, color: C.murekkep, lineHeight: 1.3 }}>
             {eylem.ad}
           </h2>
-          <p className="mono mb-5" style={{ fontSize: 13, color: "#3A3527", lineHeight: 1.65 }}>
+          <p className="mono mb-4" style={{ fontSize: 13, color: "#3A3527", lineHeight: 1.65 }}>
             {eylem.metin}
           </p>
+
+          {/* Karşındakinin bir adı var: hamleyi kimin yaptığı belli olsun. */}
+          <div
+            className="mono mb-5 pl-3"
+            style={{ fontSize: 11.5, color: "#6B6250", lineHeight: 1.6, borderLeft: `2px solid ${C.damga}` }}
+          >
+            {MUHALEFET_LIDERI.unvan} <strong style={{ color: C.murekkep }}>{MUHALEFET_LIDERI.ad}</strong>.{" "}
+            {MUHALEFET_LIDERI.arkaPlan}
+          </div>
 
           <div className="mono mb-3" style={{ fontSize: 9, color: "#6B6250", letterSpacing: "0.12em" }}>
             NASIL KARŞILIK VERİYORSUN?
