@@ -60,7 +60,21 @@ const KAPASITE = 3;
 const TOPLAM_SANDALYE = 101;
 const BARAJ = 51;
 
-const NUFUZ_MALIYET = { KANUN: 5, KARARNAME: 4, OPERASYON: 4 };
+// Üç belge türünün gerçek maliyeti yalnızca bu tabloda değil; kanunun geçince
+// iade ettiği nüfuzda ve etkisini iki kez uygulamasında saklı. Eski değerlerle
+// (kanun 5 − 3 iade = net 2, etki iki kez / kararname net 4, etki bir kez)
+// kanun, kararnamenin yarı fiyatına iki katı etki veriyordu: kararnameyi
+// seçmek için hiçbir sebep kalmıyordu.
+//
+// Yeni denge, uygulama başına düşen nüfuz olarak okunmalı:
+//   KANUN      net 4, etki ×2  → 2.0   en verimli, ama en yavaş ve tek riskli
+//                                       olan (meclis reddedebilir) ve kapasiteyi
+//                                       4 tur boyunca tutan
+//   KARARNAME  net 3, etki ×1  → 3.0   ucuz, hızlı, garantili, mütevazı
+//   OPERASYON  net 4, etki ×1  → 4.0   en pahalısı, ama anında ve tekrarlanabilir
+const NUFUZ_MALIYET = { KANUN: 5, KARARNAME: 3, OPERASYON: 4 };
+// Meclisten kanun geçirmek siyasi sermaye kazandırır — ama eskisi kadar değil.
+const KANUN_IADE = 1;
 // Nüfuz biriktirilebilir ama sınırsız değil: en fazla birkaç yarıyıllık gelir.
 const NUFUZ_TAVAN = 30;
 // Bazı etkiler anında değil, birkaç yarıyıl sonra hissedilir.
@@ -2368,8 +2382,20 @@ function vergiGeliri(s) {
   return Math.round(oran * carpan * 10) / 10;
 }
 
+// Siyasi sermaye durumdan beslenir. Eskiden sabit +6 idi: hiçbir içerik, hiçbir
+// gösterge nüfuzu etkilemiyordu — kapalı bir metronomdu ve tur 3'ten sonra
+// tavana çarpıp boşa akıyordu. Artık halk desteği ve meclisteki rahatlık hamle
+// alanı açar, ikisinin de olmaması eli kolu bağlar.
+//
+// Başlangıç durumunda (onay 58, koalisyon 51) sonuç bilerek tam 6'dır — mevcut
+// denge referansları bu yüzden kaymaz.
 function nufuzKazanci(s) {
-  return 6 + (s.ist.onay > 65 ? 1 : 0);
+  const onayKatki = s.ist.onay > 65 ? 2 : s.ist.onay > 55 ? 1 : 0;
+  const meclisKatki = s.koalisyon >= BUYUK_BARAJ ? 1 : s.koalisyon >= BARAJ ? 0 : -1;
+  // Taban 3, kararname maliyetiyle aynı: siyaseten dibe vurmuş bir başkan bile
+  // her yarıyıl en az bir kararname imzalayabilir. Oyun hiçbir durumda oyuncuyu
+  // hamlesiz bırakmaz — yalnızca seçeneklerini daraltır.
+  return Math.max(3, 5 + onayKatki + meclisKatki);
 }
 
 // Tur sonu (Doküman Bölüm 10)
@@ -2420,13 +2446,18 @@ function turSonu(s) {
     yeni = { ...yeni, suphe: Math.max(0, yeni.suphe - yatisma) };
     rapor.supheYatisma = Math.round(yatisma * 10) / 10;
   }
+  // Yuvarlama yalnızca gösterim içindir. Eskiden yuvarlanmış değer UYGULANIYORDU
+  // ve bu bir ölü bölge yaratıyordu: böleni 22-30 olan kollarda (dış politika,
+  // şeffaflık, yargı, basın) 3 puandan küçük oynatmalar 0.0'a yuvarlanıp yok
+  // oluyordu — oyuncu puan başına 2 nüfuz ödeyip hiçbir şey almıyordu. Artık
+  // ham değer işliyor; her puanın karşılığı var.
   rapor.kolEtki = {
     onay: Math.round(kolEtki.onay * 10) / 10,
     istikrar: Math.round(kolEtki.istikrar * 10) / 10,
     kuresel: Math.round(kolEtki.kuresel * 10) / 10,
     hazirlik: Math.round(kolEtki.hazirlik * 10) / 10,
   };
-  yeni = etkiUygula(yeni, rapor.kolEtki);
+  yeni = etkiUygula(yeni, kolEtki);
 
   // 3) Yıpranma — hiçbir hükümet yerinde sayarak ayakta kalamaz.
   //    Oyunun varsayılan gidişatı düşüştür; oyuncunun işi bununla savaşmaktır.
@@ -3262,7 +3293,7 @@ export default function TheDirective() {
       if (oy.gecti) {
         // Kabul edilen kanun tek seferliktir.
         yeni = { ...yeni, kullanim: { ...yeni.kullanim, [eylem.id]: yeni.tur } };
-        yeni = etkiUygula(yeni, { nufuz: 3 });
+        yeni = etkiUygula(yeni, { nufuz: KANUN_IADE });
         yeni = {
           ...yeni,
           belgeler: [
