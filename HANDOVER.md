@@ -60,7 +60,7 @@ All verified against source.
 | Meter | Start | Notes |
 |---|---|---|
 | Onay (approval) | 58 | **Derived** — weighted mean of the voter blocs. 55% of election performance |
-| Hazine (treasury) | $40B | Drains ~0.4/turn passively. See §9 — it constrains almost nothing |
+| Hazine (treasury) | $30B | **Can go negative.** Drains ~0.4/turn passively. See §4 |
 | İstikrar (stability) | 60 | 25% of election performance |
 | Küresel (standing) | 55 | 20% of election performance |
 | Nüfuz (influence) | 14 | Spent to act. Cap **30** |
@@ -272,6 +272,37 @@ chairing the budget committee. The budget background is deliberate — the first
 opposition scene is a budget negotiation, so the player meets them on their own
 ground.
 
+### Budget deficit
+
+Treasury is **not clamped at zero** — the state can borrow. Debt is not free:
+each turn closing in deficit costs interest (10% of the debt), approval
+(`1 + debt/20`, capped at 4), stability (`debt/30`, capped at 2), and 1
+influence.
+
+Money never *blocks* an action — actions are paid for in influence — because a
+hard money gate could deadlock the game: only 10 effect entries anywhere produce
+income and seven sit in two one-time tax actions. Overspending is a debt you
+service, not a wall you hit.
+
+The escape route already existed in the levers and is what gives five of them a
+job for the first time: raising `gelirVergisi` / `kurumsalVergi` lifts income
+immediately, cutting `sosyalYardim` / `guvenlikButcesi` / `askeriButce` cuts
+expenses. Measured: a player entering deficit and running austerity from turn 4
+climbs from 8 back to 29 by turn 10, at a cost of about 5 approval — because
+raising income tax pushes approval down every turn through `kolEtki`.
+
+The approval half of the debt bill is routed through the `sosyalYardim` bloc
+tendency, so the Emekçi bloc absorbs most of it: wages, benefits and services
+are what get cut first.
+
+**Starting treasury is also an input to outcome selection, not just a budget.**
+Many `skor` functions read `s.ist.hazine`, so a poorer state makes different
+outcomes win. Lowering the start from 40 to 30 left passive play and the
+act-every-turn bot untouched but moved the persistently-risky bot from 35.5% to
+32.7% — that bot never once went into debt; different content simply fired.
+Treat any change to starting treasury as a content change, not just an economic
+one, and re-measure.
+
 ### Starting scenarios
 
 Picked before promises. All promise targets are relative to `s.baslangic`, so
@@ -282,25 +313,27 @@ scenarios cannot make a promise unfairly easy or impossible.
 | Dengeli Devir | Standart | baseline |
 | Yalnız Ülke | Zor | standing 38, stability and readiness up |
 | Bölünmüş Meclis | Zor | 46 seats, party loyalty and stability up |
-| Yıpranmış Devir | Çok zor | approval 53, treasury 20, stability 57 |
+| Yıpranmış Devir | Çok zor | approval 53, treasury 12, stability 57 |
 
 Bölünmüş Meclis is the sharpest: at 46 seats an ordinary bill polls 47/101 and
 fails, so rebuilding a majority comes before anything else can be signed.
 
 ### Endings
 
-Eleven: ten cards from `finalKarti()` plus the removal-from-office screen. Two
+Thirteen: twelve cards from `finalKarti()` plus the removal-from-office screen. Two
 axes — the ballot box and the file you leave behind — with the file taking
 precedence, because how you won matters more than by how much.
 
 ```
 won  + powers suspended   Kazandın, dosya kapanmadı
 won  + investigated       Gölgede kalan zafer
+won  + in debt            Kazandın, borcu devraldın
 won  + 60%+               Ezici çoğunlukla yeniden seçildin
 won  + ≤52%               Kıl payı kazandın
 won                       Yeniden seçildin
 lost + powers suspended   Hem koltuğu hem dosyayı bıraktın
 lost + investigated       Seçimi kaybettin, soruşturma sürüyor
+lost + in debt            Boş bir kasa bırakarak gidiyorsun
 lost + ≥47%               Kıl payı kaybettin
 lost + <40%               Ağır bir yenilgi
 lost                      Seçimi kaybettin
@@ -473,7 +506,7 @@ Re-measure these after any engine change. They are the contract.
 |---|---|
 | Passive — no actions at all | **38.8%** loses |
 | Acts every turn, ignores its promises | **46.8%** loses |
-| Persistently risky | **35.5%** loses |
+| Persistently risky | **32.7%** loses |
 | Pursuing its promises | 73–82% depending on the pair |
 
 **Promise-choice spread: 0.00** across all ten promise pairs, in all four
@@ -531,16 +564,6 @@ narrative arc and no mechanics. Tax rates were raised to preserve total income.
 ---
 
 ## 9. Open issues
-
-### Treasury constrains almost nothing
-
-The largest unaddressed design gap. Actions are paid for in **influence, not
-money**, and `etkiUygula` clamps treasury at zero — so playing with an empty
-treasury costs almost nothing. Passive drain is about −0.4/turn.
-
-This surfaced while building the starting scenarios: an indebted-treasury
-scenario had so little mechanical bite that it had to be rebuilt around approval
-instead. The economic leg of the game is currently decorative.
 
 ### An unverified reference
 

@@ -180,6 +180,38 @@ const KOALISYON_ESIGI = 60;
 const VAAT_BASKI_TURU = 6;
 const VAAT_BASKI_KAYMA = 0.08;
 
+// ---------- BÜTÇE AÇIĞI ----------
+// Hazine artık eksiye düşebilir ve borç bedava değildir. Oyuncuyu ASLA hamlesiz
+// bırakmaz — eylemler nüfuzla ödenir, parayla değil — ama borç büyüdükçe her
+// tur faturasını keser. Bilerek böyle: parayı sert bir kapıya çevirmek oyunu
+// kilitleyebilirdi, çünkü para kazandıran yalnızca 10 etki girdisi var ve
+// yedisi iki tek seferlik vergi eyleminde duruyor.
+//
+// Kaçış yolu zaten kodda: vergi kollarını yükseltmek geliri, harcama kollarını
+// kısmak gideri anında oynatır. Bu değişikliğin asıl kazancı da bu — beş bütçe
+// kolunun şimdiye kadar dokunulmak için hiçbir sebebi yoktu.
+// Bedeli var: gelir vergisini yükseltmek onayı her tur aşağı çeker.
+const BORC_FAIZ = 0.1;        // her tur borcun onda biri eklenir
+const BORC_ONAY_TABAN = 1;    // borçtayken taban onay kaybı
+const BORC_ONAY_BOLEN = 20;   // derinleştikçe artan kısmı
+const BORC_ONAY_TAVAN = 4;    // tek turda onaydan en fazla bu kadar götürür
+const BORC_ISTIKRAR_BOLEN = 30;
+const BORC_ISTIKRAR_TAVAN = 2;
+
+// Borçtaki bir devletin o turki faturası. Hazine artıdaysa hepsi sıfırdır.
+function butceBaskisi(hazine) {
+  if (hazine >= 0) return null;
+  const borc = -hazine;
+  return {
+    borc,
+    faiz: Math.round(borc * BORC_FAIZ * 10) / 10,
+    onay: -Math.min(BORC_ONAY_TAVAN, BORC_ONAY_TABAN + borc / BORC_ONAY_BOLEN),
+    istikrar: -Math.min(BORC_ISTIKRAR_TAVAN, borc / BORC_ISTIKRAR_BOLEN),
+    // Borçlanan hükümetin eli siyaseten de bağlanır.
+    nufuz: -1,
+  };
+}
+
 // ---------- SEÇMEN BLOKLARI ----------
 // Onay tek bir sayıydı ve oyundaki 95 etki girdisinin dokunduğu şey oydu: her
 // hamle aynı havuzu dolduruyor ya da boşaltıyordu, yani "herkesi aynı anda
@@ -2265,7 +2297,7 @@ const BASLANGIC_SENARYOLARI = [
     // erimeye başlar, yani halkı kazanmak yalnızca seçim için değil, yönetebilmek
     // için de acil. Düşük hazine tek başına baskı yaratmıyor — eylemler nüfuzla
     // ödeniyor — bu yüzden senaryonun asıl ağırlığı onaydadır.
-    durum: { ist: { hazine: 20, onay: 53, istikrar: 57 } },
+    durum: { ist: { hazine: 12, onay: 53, istikrar: 57 } },
   },
   {
     id: "bolunmus",
@@ -2295,7 +2327,7 @@ function yeniOyun(secilenVaatler, senaryoId) {
   const senaryo = senaryoBul(senaryoId);
   const y = senaryo.durum;
   const kpi = { gsyih: 55, istihdam: 52, halkSagligi: 58, hazirlik: 55, ...(y.kpi || {}) };
-  const ist = { onay: 58, hazine: 40, istikrar: 60, kuresel: 55, nufuz: 14, ...(y.ist || {}) };
+  const ist = { onay: 58, hazine: 30, istikrar: 60, kuresel: 55, nufuz: 14, ...(y.ist || {}) };
   const kollar = { ...BASLANGIC_KOLLAR, ...(y.kollar || {}) };
   const koalisyon = y.koalisyon != null ? y.koalisyon : 51;
 
@@ -2492,9 +2524,13 @@ function etkiUygula(s, etki, egilim) {
       });
       ist.onay = BLOK_TOPLAM(bloklar);
     } else if (k === "hazine") {
-      // Kasaya giren ve çıkan ayrı ayrı tutulur ki panelde döküm gösterilebilsin.
+      // Hazine sıfırda DURMUYOR; devlet borçlanabilir. Eskiden burada
+      // Math.max(0, ...) vardı ve bu, oyunun ekonomi ayağını dekoratif
+      // kılıyordu: eylemler nüfuzla ödendiği için boş kasayla oynamanın
+      // hiçbir bedeli yoktu. Artık eksiye düşülür ve borç her tur faturasını
+      // keser (bkz. turSonu'ndaki bütçe baskısı).
       const oncekiHazine = ist.hazine;
-      ist.hazine = Math.max(0, ist.hazine + v);
+      ist.hazine = ist.hazine + v;
       const gercekFark = ist.hazine - oncekiHazine;
       if (gercekFark > 0) nakit.giren += gercekFark;
       else if (gercekFark < 0) nakit.cikan += -gercekFark;
@@ -2592,6 +2628,22 @@ function turSonu(s) {
   yeni = etkiUygula(yeni, { hazine: -(sosyalGider + guvenlikGider + askeriGider) });
   rapor.gider = Math.round((sosyalGider + guvenlikGider + askeriGider) * 10) / 10;
   rapor.giderKalem = { sosyal: sosyalGider, guvenlik: guvenlikGider, askeri: askeriGider };
+
+  // 2b) Borcun faturası. Gelir ve giderden SONRA bakılır: o turda kasayı
+  // toparladıysan borçlu sayılmazsın, borç ancak yarıyıl kapanışında da
+  // eksideysen işler.
+  const baski = butceBaskisi(yeni.ist.hazine);
+  if (baski) {
+    yeni = etkiUygula(yeni, {
+      hazine: -baski.faiz,
+      istikrar: baski.istikrar,
+      nufuz: baski.nufuz,
+    });
+    // Borcun onay faturasını en çok emekçi seçmen öder: kesilen ilk şey
+    // maaş, ödenek ve hizmettir.
+    yeni = etkiUygula(yeni, { onay: baski.onay }, KOL_EGILIMI.sosyalYardim);
+    rapor.borc = baski;
+  }
 
   // Kolların onay etkisi kol kol tutulur: üçü de onaya yazılır ama üçü farklı
   // seçmene hitap eder — sosyal yardım emekçiye, şeffaflık kentliye. Tek bir
@@ -2842,6 +2894,8 @@ function mansetSec(rapor) {
     return { baslik: "SOKAK HÜKÜMETE SIRTINI DÖNÜYOR", spot: "Onay oranı kritik eşiğin altına indi; kabine sarsıntıda.", agir: true };
   if (yeniGecti(d.koalisyon, o.koalisyon, BARAJ))
     return { baslik: "MECLİS ÇOĞUNLUĞU KAYBEDİLDİ", spot: "Koalisyon barajın altına düştü. Artık her tasarı parti sadakatine ve halk desteğine kalmış durumda.", agir: true };
+  if (yeniGecti(d.hazine, o.hazine, 0))
+    return { baslik: "DEVLET BORÇLANMAYA BAŞLADI", spot: "Hazine ilk kez eksiye düştü. Faiz bundan sonra her yarıyıl bütçeden kesilecek.", agir: true };
   if (yeniGecti(d.hazine, o.hazine, 10))
     return { baslik: "HAZİNE DİP SEVİYEDE", spot: "Kasadaki daralma yeni harcamaların önünü kesiyor.", agir: true };
   if (yeniGecti(d.istikrar, o.istikrar, 40))
@@ -3032,6 +3086,8 @@ function finalKarti(s, r) {
   const sorusturuldu = gecmis.includes("sorusturma");
   const L = MUHALEFET_LIDERI.soyad;
 
+  const borclu = s.ist.hazine < 0;
+
   if (r.kazandi) {
     // Dosya, sandıktan önce gelir: nasıl kazandığın ne kadar kazandığından önemli.
     if (kisitlandi)
@@ -3046,6 +3102,13 @@ function finalKarti(s, r) {
         kod: "golgeli-zafer",
         baslik: "Gölgede kalan zafer",
         metin: `Sandık seni doğruladı, ama hakkında açılan soruşturmanın dosyası kapanmadı. Zaferin ilk günü, kutlamadan çok açıklamayla geçti.`,
+        ton: "golgeli",
+      };
+    if (borclu)
+      return {
+        kod: "borclu-zafer",
+        baslik: "Kazandın, borcu devraldın",
+        metin: `Sandık seni yeniledi ama hazine eksideki haliyle devredildi. İkinci dönemin ilk maddesi kendi bıraktığın faiz olacak; ${L} bunu kürsüden hatırlatmayı ihmal etmedi.`,
         ton: "golgeli",
       };
     if (r.oy >= 60)
@@ -3082,6 +3145,13 @@ function finalKarti(s, r) {
       kod: "golgeli-yenilgi",
       baslik: "Seçimi kaybettin, soruşturma sürüyor",
       metin: `Sandık kararını verdi. Hakkındaki inceleme ise görevin bitmesiyle kapanmıyor — dosya yeni yönetime devredildi.`,
+      ton: "karanlik",
+    };
+  if (borclu)
+    return {
+      kod: "borclu-yenilgi",
+      baslik: "Boş bir kasa bırakarak gidiyorsun",
+      metin: `Seçimi kaybettin ve hazineyi eksiden teslim ediyorsun. Devir teslim tutanağına yazılan ilk rakam borç oldu.`,
       ton: "karanlik",
     };
   if (r.oy >= 47)
@@ -4549,6 +4619,21 @@ export default function TheDirective() {
           />
         </div>
 
+        {s.ist.hazine < 0 && (
+          <div
+            className="kutu p-3 mb-3"
+            style={{ background: "rgba(229,85,90,.08)", borderColor: "rgba(229,85,90,.35)" }}
+          >
+            <div className="mono flex items-center gap-1.5 mb-1.5" style={{ fontSize: 9, color: C.eksi, letterSpacing: "0.14em" }}>
+              <AlertTriangle size={12} /> HAZİNE BORÇLU · ${paraYaz(-s.ist.hazine)}B
+            </div>
+            <div className="mono" style={{ fontSize: 10.5, color: C.solgun, lineHeight: 1.55 }}>
+              Her yarıyıl faiz işliyor, onay ve istikrar aşağı çekiliyor. Vergi kollarını
+              yükselterek ya da harcama kollarını kısarak kasayı toparlayabilirsin.
+            </div>
+          </div>
+        )}
+
         <BlokSerit s={s} />
 
         <VaatTakip s={s} />
@@ -5611,10 +5696,18 @@ function Gazete({ rapor, sonrakiTur, onDevam }) {
             <div style={{ borderTop: "1px solid #C9BE9E", marginTop: 5, paddingTop: 5 }}>
               <KagitSatir ad="Kasaya kalan" deger={`${net >= 0 ? "+" : "−"}$${paraYaz(Math.abs(net))}B`} kalin />
             </div>
+            {rapor.borc && (
+              <div style={{ borderTop: `1px solid ${C.damga}`, marginTop: 6, paddingTop: 6 }}>
+                <KagitSatir ad="Borç" deger={`$${paraYaz(rapor.borc.borc)}B`} kalin />
+                <KagitSatir ad="Bu yarıyılın faizi" deger={`−$${paraYaz(rapor.borc.faiz)}B`} />
+              </div>
+            )}
             <div className="mono mt-2" style={{ fontSize: 10, color: "#7A7260", lineHeight: 1.5 }}>
               Sosyal yardım ${paraYaz(rapor.giderKalem.sosyal)}B · güvenlik ${paraYaz(rapor.giderKalem.guvenlik)}B ·
               savunma ${paraYaz(rapor.giderKalem.askeri)}B.
               Siyasi nüfuz {rapor.nufuz} puan tazelendi.
+              {rapor.borc &&
+                " Hazine borçlu kapandı; faiz ve kesintiler önümüzdeki yarıyılda da işleyecek."}
             </div>
           </div>
 
