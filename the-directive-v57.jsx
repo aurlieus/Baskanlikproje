@@ -60,7 +60,21 @@ const KAPASITE = 3;
 const TOPLAM_SANDALYE = 101;
 const BARAJ = 51;
 
-const NUFUZ_MALIYET = { KANUN: 5, KARARNAME: 4, OPERASYON: 4 };
+// Üç belge türünün gerçek maliyeti yalnızca bu tabloda değil; kanunun geçince
+// iade ettiği nüfuzda ve etkisini iki kez uygulamasında saklı. Eski değerlerle
+// (kanun 5 − 3 iade = net 2, etki iki kez / kararname net 4, etki bir kez)
+// kanun, kararnamenin yarı fiyatına iki katı etki veriyordu: kararnameyi
+// seçmek için hiçbir sebep kalmıyordu.
+//
+// Yeni denge, uygulama başına düşen nüfuz olarak okunmalı:
+//   KANUN      net 4, etki ×2  → 2.0   en verimli, ama en yavaş ve tek riskli
+//                                       olan (meclis reddedebilir) ve kapasiteyi
+//                                       4 tur boyunca tutan
+//   KARARNAME  net 3, etki ×1  → 3.0   ucuz, hızlı, garantili, mütevazı
+//   OPERASYON  net 4, etki ×1  → 4.0   en pahalısı, ama anında ve tekrarlanabilir
+const NUFUZ_MALIYET = { KANUN: 5, KARARNAME: 3, OPERASYON: 4 };
+// Meclisten kanun geçirmek siyasi sermaye kazandırır — ama eskisi kadar değil.
+const KANUN_IADE = 1;
 // Nüfuz biriktirilebilir ama sınırsız değil: en fazla birkaç yarıyıllık gelir.
 const NUFUZ_TAVAN = 30;
 // Bazı etkiler anında değil, birkaç yarıyıl sonra hissedilir.
@@ -147,7 +161,127 @@ const SECMEN = Math.round(NUFUS * 0.71);
 
 // Koalisyonu ayakta tutmak için gereken onay eşiği.
 // Bunun altında sandalye kaybedersin, üstünde toplarsın.
-const KOALISYON_ESIGI = 58;
+//
+// 58 idi ve bu tam olarak başlangıç onayına eşitti; sadakat pivotu (50) da
+// başlangıç sadakatine eşit olduğu için kayma başlangıçta matematiksel olarak
+// TAM SIFIRDI. Yıpranma da kapalı olduğundan hiçbir şey yapmayan oyuncunun
+// koalisyonu 10 tur boyunca 51'de donuyordu — meclis ölü bir sayıydı.
+//
+// 60'a çekildi: koalisyon artık bakım isteyen canlı bir organ. Ölçüldü —
+// hiçbir şey yapmayan oyuncu tur 7'de çoğunluğu kaybeder (oyunun ilk yarısı
+// rahat geçer, hesap sonda sorulur), buna karşılık aktif oyuncu sandalye
+// kazanmaya devam eder. Parti sadakati kolunu yukarı çekmek erimeyi dengeler;
+// o kolun şimdiye kadar olmayan gerçek bir işlevi oldu.
+const KOALISYON_ESIGI = 60;
+
+// Tutulmayan vaatler yalnızca seçimde değil, yönetirken de bedel ödetir:
+// grubun morali bozulur, sandalye erimesi hızlanır. Görev süresinin ilk
+// yarısında sözünü tutmak için vaktin var — bu baskı yarıdan sonra başlar.
+const VAAT_BASKI_TURU = 6;
+const VAAT_BASKI_KAYMA = 0.08;
+
+// ---------- BÜTÇE AÇIĞI ----------
+// Hazine artık eksiye düşebilir ve borç bedava değildir. Oyuncuyu ASLA hamlesiz
+// bırakmaz — eylemler nüfuzla ödenir, parayla değil — ama borç büyüdükçe her
+// tur faturasını keser. Bilerek böyle: parayı sert bir kapıya çevirmek oyunu
+// kilitleyebilirdi, çünkü para kazandıran yalnızca 10 etki girdisi var ve
+// yedisi iki tek seferlik vergi eyleminde duruyor.
+//
+// Kaçış yolu zaten kodda: vergi kollarını yükseltmek geliri, harcama kollarını
+// kısmak gideri anında oynatır. Bu değişikliğin asıl kazancı da bu — beş bütçe
+// kolunun şimdiye kadar dokunulmak için hiçbir sebebi yoktu.
+// Bedeli var: gelir vergisini yükseltmek onayı her tur aşağı çeker.
+const BORC_FAIZ = 0.1;        // her tur borcun onda biri eklenir
+const BORC_ONAY_TABAN = 1;    // borçtayken taban onay kaybı
+const BORC_ONAY_BOLEN = 20;   // derinleştikçe artan kısmı
+const BORC_ONAY_TAVAN = 4;    // tek turda onaydan en fazla bu kadar götürür
+const BORC_ISTIKRAR_BOLEN = 30;
+const BORC_ISTIKRAR_TAVAN = 2;
+
+// Borçtaki bir devletin o turki faturası. Hazine artıdaysa hepsi sıfırdır.
+function butceBaskisi(hazine) {
+  if (hazine >= 0) return null;
+  const borc = -hazine;
+  return {
+    borc,
+    faiz: Math.round(borc * BORC_FAIZ * 10) / 10,
+    onay: -Math.min(BORC_ONAY_TAVAN, BORC_ONAY_TABAN + borc / BORC_ONAY_BOLEN),
+    istikrar: -Math.min(BORC_ISTIKRAR_TAVAN, borc / BORC_ISTIKRAR_BOLEN),
+    // Borçlanan hükümetin eli siyaseten de bağlanır.
+    nufuz: -1,
+  };
+}
+
+// ---------- SEÇMEN BLOKLARI ----------
+// Onay tek bir sayıydı ve oyundaki 95 etki girdisinin dokunduğu şey oydu: her
+// hamle aynı havuzu dolduruyor ya da boşaltıyordu, yani "herkesi aynı anda
+// memnun et" diye bir strateji vardı. Blok sistemi bunu kırar — kimi memnun
+// ettiğin, ne kadar memnun ettiğin kadar önemli hale gelir.
+//
+// ÖNEMLİ: `onay` ARTIK TÜRETİLMİŞ BİR DEĞERDİR — blokların ağırlıklı
+// ortalamasıdır. Böylece onay'ı okuyan her şey (seçim formülü, koalisyon
+// kayması, nüfuz geliri) hiç değişmeden çalışmaya devam eder. Bir etki
+// dağıtılırken ağırlıklı ortalaması korunacak şekilde normalize edilir, yani
+// toplamda onay eskisi gibi hareket eder; değişen, içindeki dağılımdır.
+const SECMEN_BLOKLARI = [
+  { k: "kentli", ad: "Kentli", kisa: "Kentli", agirlik: 0.35, baslangic: 54 },
+  { k: "muhafazakar", ad: "Muhafazakâr", kisa: "Muhafazakâr", agirlik: 0.35, baslangic: 62 },
+  { k: "emekci", ad: "Emekçi", kisa: "Emekçi", agirlik: 0.3, baslangic: 58 },
+];
+
+// Başlangıçta bloklar eşit değil — devraldığın bir seçmen bileşimi var.
+// 0.35×54 + 0.35×62 + 0.30×58 = 58.0, yani toplam onay yine tam 58.
+const BLOK_TOPLAM = (b) =>
+  SECMEN_BLOKLARI.reduce((a, x) => a + x.agirlik * (b[x.k] ?? 0), 0);
+
+// Hangi iş kimin hoşuna gider. Sayılar ham eğilimdir; dağıtımda normalize
+// edilirler, bu yüzden mutlak büyüklükleri değil birbirlerine oranı önemlidir.
+// Negatif değer "bu blok bundan rahatsız olur" demektir.
+// Vektörlerin ağırlıklı toplamı bilerek 1'e yakın tutulur. Aksi halde normalize
+// ederken bölen küçülür ve dağıtım şişer: ilk taslakta kutuplaşmış bir kategori
+// +3'lük onayı tek bloğa +11 olarak yazıyordu. Bu hem oyunun «küçük sayılar»
+// ilkesine aykırı, hem de tehlikeli — blok 0/100'e çarpıp kırpılırsa ağırlıklı
+// ortalamanın korunması garantisi bozulur. Toplam ≈1 iken en yoğun blok bile
+// ortalamanın ~1.75 katını alır, o kadar.
+const NOTR_EGILIM = { kentli: 1, muhafazakar: 1, emekci: 1 };
+const KATEGORI_EGILIMI = {
+  "Vergi": { kentli: 0.7, muhafazakar: 0.9, emekci: 1.5 },
+  "İstihdam": { kentli: 0.8, muhafazakar: 0.85, emekci: 1.45 },
+  "Sağlık": { kentli: 0.95, muhafazakar: 0.85, emekci: 1.25 },
+  "İç Güvenlik": { kentli: 0.3, muhafazakar: 1.7, emekci: 1.0 },
+  "Savunma": { kentli: 0.5, muhafazakar: 1.6, emekci: 0.9 },
+  "Diplomasi": { kentli: 1.7, muhafazakar: 0.5, emekci: 0.8 },
+  "Denetim": { kentli: 1.7, muhafazakar: 0.55, emekci: 0.75 },
+  "Olağanüstü Yetki": { kentli: 0.1, muhafazakar: 1.75, emekci: 1.05 },
+  "Parti": { kentli: 0.85, muhafazakar: 1.15, emekci: 1.0 },
+  "Muhalefet": { kentli: 1.25, muhafazakar: 0.85, emekci: 0.9 },
+  // Gizli iş halka duyurulmaz, dolayısıyla onay etkisi zaten küçüktür; iş
+  // ifşa olduğunda faturayı en çok kentli seçmen keser.
+  "Gizli İşler": { kentli: 1.35, muhafazakar: 0.8, emekci: 0.85 },
+};
+
+// Politika kollarının her turki onay etkisi de bloklara dağıtılır.
+const KOL_EGILIMI = {
+  sosyalYardim: { kentli: 0.75, muhafazakar: 0.9, emekci: 1.45 },
+  gelirVergisi: { kentli: 0.85, muhafazakar: 0.9, emekci: 1.35 },
+  hukumetSeffafligi: { kentli: 1.7, muhafazakar: 0.55, emekci: 0.75 },
+};
+
+// Bir onay değişimini bloklara dağıtır. Ağırlıklı ortalama korunur: dönen
+// deltaların blok ağırlıklarıyla ortalaması tam olarak `v`ye eşittir, bu yüzden
+// toplam onay eski davranışını sürdürür.
+function blokDagit(v, egilim) {
+  const e = egilim || NOTR_EGILIM;
+  const olcek = BLOK_TOPLAM(e);
+  // Eğilimlerin ağırlıklı toplamı sıfıra çok yaklaşırsa normalize edilemez;
+  // böyle bir tanım yazılırsa sessizce bozulmasın diye nötre düşülür.
+  if (!olcek || Math.abs(olcek) < 0.05) return blokDagit(v, NOTR_EGILIM);
+  const pay = {};
+  SECMEN_BLOKLARI.forEach((b) => {
+    pay[b.k] = (v * (e[b.k] ?? 0)) / olcek;
+  });
+  return pay;
+}
 
 // ---------- İSTATİSTİK TANIMLARI ----------
 const ISTATISTIKLER = [
@@ -201,30 +335,30 @@ const VAATLER = [
     ad: "Sağlığı herkese ulaştıracağım",
     kisa: "Halk sağlığı",
     kategori: "Sağlık",
-    kosulMetni: "Halk sağlığı 70'e ulaşmalı",
+    kosulMetni: "Halk sağlığı, başlangıcın 12 puan üstüne çıkmalı",
     odul: 8,
     ceza: 6,
-    olc: (s) => ({ simdi: s.kpi.halkSagligi, hedef: 70 }),
+    olc: (s) => ({ simdi: s.kpi.halkSagligi, hedef: s.baslangic.halkSagligi + 12 }),
   },
   {
     id: "guvenlik",
     ad: "Sokakları güvene kavuşturacağım",
     kisa: "İstikrar",
     kategori: "İç Güvenlik",
-    kosulMetni: "İstikrar 68'e ulaşmalı",
+    kosulMetni: "İstikrar, başlangıcın 8 puan üstüne çıkmalı",
     odul: 8,
     ceza: 6,
-    olc: (s) => ({ simdi: s.ist.istikrar, hedef: 68 }),
+    olc: (s) => ({ simdi: s.ist.istikrar, hedef: s.baslangic.istikrar + 8 }),
   },
   {
     id: "itibar",
     ad: "Ülkeyi dünyada saygın kılacağım",
     kisa: "Küresel itibar",
     kategori: "Diplomasi",
-    kosulMetni: "Küresel itibar 70'e ulaşmalı",
+    kosulMetni: "Küresel itibar, başlangıcın 15 puan üstüne çıkmalı",
     odul: 8,
     ceza: 6,
-    olc: (s) => ({ simdi: s.ist.kuresel, hedef: 70 }),
+    olc: (s) => ({ simdi: s.ist.kuresel, hedef: s.baslangic.kuresel + 15 }),
   },
   {
     id: "vergi",
@@ -433,6 +567,7 @@ const BOLUMLER = {
           {
             ad: "Vergi kayıtlarını siyasi rakiplere karşı kullan",
             riskli: true,
+            gizli: true,
             sonuclar: [
               {
                 metin: "Üç muhalif iş insanı sessizce geri çekildi; baskı işe yaradı.",
@@ -442,6 +577,7 @@ const BOLUMLER = {
                 etki: { hazine: 3, istikrar: 2, supheDegisim: 9 },
               },
               {
+                ifsa: true,
                 metin: "Seçici denetim iddiası basına düştü.",
                 alinti:
                   "İstifa eden müfettiş, «Listeyi ben hazırlamadım, masama öyle geldi» diye ifade etti.",
@@ -605,6 +741,7 @@ const BOLUMLER = {
           {
             ad: "Kadroları kendi seçmenine dağıt",
             riskli: true,
+            gizli: true,
             sonuclar: [
               {
                 metin: "Atamalar hızla tamamlandı; teşkilat sahada belirgin şekilde güçlendi.",
@@ -614,6 +751,7 @@ const BOLUMLER = {
                 etki: { istihdam: 2, koalisyon: 2, hazine: -4, supheDegisim: 10 },
               },
               {
+                ifsa: true,
                 metin: "Atama listeleri sızdı; adayların üçte ikisinin aynı ilçeden olduğu görüldü.",
                 alinti:
                   "Sınavda birinci olup atanmayan bir aday, «Listede benden otuz sıra geridekiler vardı» diye ifade etti.",
@@ -746,6 +884,7 @@ const BOLUMLER = {
           {
             ad: "İhaleyi yakın çevredeki firmaya ver",
             riskli: true,
+            gizli: true,
             sonuclar: [
               {
                 metin: "İhale hızla sonuçlandı; ilaç tedariki beklenenden erken başladı.",
@@ -755,6 +894,7 @@ const BOLUMLER = {
                 etki: { halkSagligi: 2, hazine: -2, supheDegisim: 8 },
               },
               {
+                ifsa: true,
                 metin: "İhale belgeleri bir gazetecinin eline geçti; şirketin sahibiyle akrabalık bağı ortaya çıktı.",
                 alinti:
                   "Belgeleri inceleyen bir muhalefet vekili, «Şirketin adresiyle bakanlığın adresi aynı sokakta» diye ifade etti.",
@@ -1637,7 +1777,7 @@ const BOLUMLER = {
       { k: "partiSadakati", ad: "Parti Sadakati" },
       { k: "hukumetSeffafligi", ad: "Hükümet Şeffaflığı" },
     ],
-    kategoriler: ["Parti", "Muhalefet", "Gizli İşler"],
+    kategoriler: ["Parti", "Gizli İşler"],
     eylemler: [
       {
         id: "siy-par-1",
@@ -1774,165 +1914,12 @@ const BOLUMLER = {
         ],
       },
       {
-        id: "siy-muh-1",
-        kategori: "Muhalefet",
-        tur: "KARARNAME",
-        ad: "Muhalefetle Bütçe Uzlaşması",
-        metin:
-          "Bütçe komisyonunda muhalefetin oyu olmadan sayılar tutmuyor. Grup başkanvekili masaya iki liste koydu: biri taviz, biri şart.",
-        secenekler: [
-          {
-            ad: "Taviz ver, geniş destek al",
-            sonuclar: [
-              {
-                metin: "İki kalemde taviz verildi; bütçe komisyonda geniş oyla onaylandı.",
-                alinti: "Muhalefetten bir komisyon üyesi, «Bu sefer gerçekten dinlediler» diye konuştu.",
-                skor: (s) => 50 + s.ist.onay / 6,
-                etki: { koalisyon: 2, onay: 1, hazine: -3 },
-              },
-              {
-                metin: "Kendi grubundan bazı vekiller tavizleri fazla buldu; grup içi toplantıda gerginlik yaşandı.",
-                alinti: "Grup toplantısına katılan bir vekil, «Bu kadar taviz karşılığında ne aldık» diye sitem etti.",
-                skor: (s) => 50 + (60 - s.kollar.partiSadakati) / 4,
-                etki: { koalisyon: 1, onay: -2, hazine: -3 },
-              },
-            ],
-          },
-          {
-            ad: "Taviz verme, çoğunlukla geçir",
-            sonuclar: [
-              {
-                metin: "Bütçe taviz verilmeden oylandı; koalisyon oylarıyla kıl payı geçti.",
-                alinti: "Oylamayı izleyen bir muhabir, «Salon sessizdi, sonuç belliydi ama gerginlik hissediliyordu» kaydetti.",
-                skor: (s) => 50 + s.ist.istikrar / 6,
-                etki: { onay: 1, istikrar: 1, koalisyon: -1 },
-              },
-              {
-                metin: "Muhalefet oylamadan çekildi; komisyon tutanağına «tek taraflı bütçe» ibaresi düşüldü.",
-                alinti: "Muhalefet grup başkanvekili, «Bizimle değil, bize rağmen geçirdiler» diye ifade etti.",
-                skor: (s) => 50 + (50 - s.ist.istikrar) / 4,
-                etki: { koalisyon: -1, istikrar: -1 },
-              },
-            ],
-          },
-          {
-            ad: "Muhalefetin kaynaklarını denetimle kurut",
-            riskli: true,
-            sonuclar: [
-              {
-                metin: "Muhalefet belediyelerine yönelik mali denetim sıklaştırıldı; itiraz süreleri uzadı.",
-                alinti: "Denetim ekibiyle çalışan bir müfettiş, «Talimat geldi, biz de gittik» dedi.",
-                skor: (s) => 50 + s.kollar.basinDenetimi / 4,
-                etki: { koalisyon: 2, hazine: 1, supheDegisim: 8 },
-              },
-              {
-                metin: "Denetimlerin zamanlaması dikkat çekti; sadece muhalefet belediyelerine yoğunlaştığı tabloyla gösterildi.",
-                alinti: "Konuyu araştıran bir gazeteci, «Aynı dönemde bizim belediyelere hiç denetim gitmemiş» diye ifade etti.",
-                skor: (s) => 50 + s.kollar.yargiBagimsizligi / 4,
-                etki: { koalisyon: 1, onay: -2, supheDegisim: 13 },
-              },
-            ],
-          },
-        ],
-      },
-      {
-        id: "siy-muh-2",
-        kategori: "Muhalefet",
-        tur: "KANUN",
-        buyuk: true,
-        ad: "Meclis İçtüzük Değişikliği",
-        metin:
-          "Bir tasarı üç haftadır kürsüde; muhalefetin konuşma süresi dolmuyor. İçtüzüğü değiştirmek elinde — ama bu bir demokrasi tartışmasını da açar.",
-        secenekler: [
-          {
-            ad: "Konuşma sürelerini kısalt, yasama hızlansın",
-            sonuclar: [
-              {
-                metin: "Yeni içtüzük kabul edildi; bekleyen dört tasarı aynı hafta oylamaya girdi.",
-                alinti: "Meclis muhabiri bir gazeteci, «Üç haftalık tıkanıklık bir günde açıldı» diye konuştu.",
-                skor: (s) => s.koalisyon,
-                etki: { koalisyon: 1, istikrar: 1, onay: -2, kuresel: -1 },
-              },
-              {
-                metin: "Muhalefet oturumu terk etti; salonun boş sıraları o akşam haber görüntüsü oldu.",
-                alinti: "Salonu terk eden bir muhalefet vekili, «Konuşamıyorsak burada oturmanın anlamı yok» diye ifade etti.",
-                skor: (s) => 50 + (60 - s.ist.onay) / 3.5,
-                etki: { koalisyon: 1, onay: -3, kuresel: -2, istikrar: -1 },
-              },
-            ],
-          },
-          {
-            ad: "Uzlaşma komisyonu kur, birlikte yaz",
-            sonuclar: [
-              {
-                metin: "Komisyon iki partiden eşit üyeyle kuruldu; ilk taslak altı haftada ortaklaşa yazıldı.",
-                alinti: "Komisyonda yer alan muhalefet vekili, «İlk kez masaya oturup birlikte yazdık» dedi.",
-                skor: (s) => 50 + s.kollar.hukumetSeffafligi / 5,
-                etki: { istikrar: 2, onay: 1, koalisyon: 1, hazine: -1 },
-                gecikmeli: { kuresel: 2 },
-                gecikmeliMetin: "Uzlaşmayla kabul edilen içtüzük değişikliği uluslararası parlamento gözlem raporlarında örnek gösterildi.",
-              },
-              {
-                metin: "Komisyon üç toplantı sonra tıkandı; taraflar aynı maddede anlaşamadı.",
-                alinti: "Komisyon sözcüsü bir vekil, «Altı hafta harcadık, tek madde bile yazamadık» diye sitem etti.",
-                skor: (s) => 50 + (60 - s.koalisyon) / 4,
-                etki: { onay: -1, istikrar: -1 },
-              },
-            ],
-          },
-        ],
-      },
-      {
-        id: "siy-muh-3",
-        kategori: "Muhalefet",
-        tur: "OPERASYON",
-        bekleme: 4,
-        ad: "Erken Seçim Tehdidi",
-        metin:
-          "Muhalefet üç gündür aynı tasarıyı meclise sokturmuyor. Kurmaylardan biri masaya erken seçim kartını koyuyor: «Blöf de olsa, gündemi değiştirir.»",
-        secenekler: [
-          {
-            ad: "Açıkça tehdit et, muhalefeti geri adıma zorla",
-            sonuclar: [
-              {
-                metin: "Erken seçim çıkışı ertesi gün muhalefeti masaya döndürdü; tıkanan tasarı gündeme alındı.",
-                alinti: "Kararı öğrenen bir borsa yorumcusu, «Piyasa önce tedirgin oldu, sonra rahatladı» diye konuştu.",
-                skor: (s) => 50 + s.ist.onay / 5,
-                etki: { koalisyon: 2, istikrar: 1, kuresel: -1 },
-              },
-              {
-                metin: "Muhalefet çıkışa meydan okudu; üç gün boyunca kur oynaklığı arttı.",
-                alinti: "Bir döviz bürosu çalışanı, «Müşteriler sabah farklı, akşam farklı kur soruyordu» kaydetti.",
-                skor: (s) => 50 + (62 - s.ist.onay) / 3.5,
-                etki: { koalisyon: -1, istikrar: -2, hazine: -2, kuresel: -1 },
-              },
-            ],
-          },
-          {
-            ad: "Kapalı kapılar ardında pazarlık yap",
-            sonuclar: [
-              {
-                metin: "Kapalı görüşmede iki madde üzerinde anlaşıldı; tasarı sessizce gündeme alındı.",
-                alinti: "Görüşmeye katılan bir danışman, «Kimse manşet istemedi, ikimiz de» diye ifade etti.",
-                skor: (s) => 50 + s.koalisyon / 6,
-                etki: { koalisyon: 1, istikrar: 1, kuresel: -1 },
-              },
-              {
-                metin: "Kapalı pazarlığın tutanağı bir muhalefet vekilince ifşa edildi.",
-                alinti: "İfşa eden vekil, «Kapalı kapı arkasında halkın adına konuşulmaz» diye sitem etti.",
-                skor: (s) => 50 + (65 - s.kollar.hukumetSeffafligi) / 4,
-                etki: { onay: -2, kuresel: -1 },
-              },
-            ],
-          },
-        ],
-      },
-      {
         id: "siy-giz-1",
         kategori: "Gizli İşler",
         tur: "OPERASYON",
         bekleme: 3,
         riskli: true,
+        gizli: true,
         ad: "Kamuoyu Yönlendirme Ağı",
         metin:
           "Bir danışman ekranını sana çeviriyor: aynı cümleyi kuran dört yüz hesap, hepsi son iki saatte açılmış. «Bunlar bizim değil» diyor, bir an duruyor, «ama bizim de olabilir.»",
@@ -1949,6 +1936,7 @@ const BOLUMLER = {
                 etki: { onay: 2, supheDegisim: 9, hazine: -1 },
               },
               {
+                ifsa: true,
                 metin: "Bir veri analisti hesap ağını haritalayıp yayımladı; dört yüz hesabın aynı sunucudan yönetildiği görüldü.",
                 alinti:
                   "Ağda çalışmış bir üniversite öğrencisi, «Günlüğü doldurup para alıyorduk, ne yazdığımıza bakmıyorduk» diye ifade etti.",
@@ -1984,6 +1972,7 @@ const BOLUMLER = {
         tur: "OPERASYON",
         bekleme: 4,
         riskli: true,
+        gizli: true,
         ad: "Muhalif Gazeteci Dosyası",
         metin:
           "İstihbarat servisinden gelen zarfta bir gazetecinin özel yazışmaları var. Kimse sana bu zarfı açmanı emretmedi — ama masanda duruyor.",
@@ -1999,6 +1988,7 @@ const BOLUMLER = {
                 etki: { istikrar: 1, kuresel: -2, supheDegisim: 15 },
               },
               {
+                ifsa: true,
                 metin: "Gazeteci dosyanın varlığını canlı yayında açıkladı; olay bir basın özgürlüğü örgütünün yıllık raporuna girdi.",
                 alinti: "Raporu hazırlayan bir örgüt temsilcisi, «Bu artık tekil bir vaka değil, bir örnek oldu» diye ifade etti.",
                 skor: (s) => 50 + s.kollar.yargiBagimsizligi / 3,
@@ -2030,6 +2020,7 @@ const BOLUMLER = {
         kategori: "Gizli İşler",
         tur: "KARARNAME",
         riskli: true,
+        gizli: true,
         ad: "Seçim Bölgesi Düzenlemesi",
         metin:
           "Seçim haritası masanda; çizim yetkisi kararnameyle sende. Danışmanın gösterdiği iki taslaktan biri «teknik düzenleme» diye sunulacak.",
@@ -2045,6 +2036,7 @@ const BOLUMLER = {
                 etki: { koalisyon: 2, supheDegisim: 14 },
               },
               {
+                ifsa: true,
                 metin: "Bir üniversite araştırma grubu haritayı analiz edip kasıtlı bölünme tespit etti.",
                 alinti: "Araştırmayı yürüten bir akademisyen, «Sınırlar mahalle değil, oy deseni takip ediyor» diye ifade etti.",
                 skor: (s) => 50 + s.kollar.yargiBagimsizligi / 3.5,
@@ -2075,6 +2067,191 @@ const BOLUMLER = {
   },
 };
 
+// Muhalefetin bir adı olsun. Seçim gecesinde karşındaki yalnızca bir yüzde
+// olarak duruyordu; oyun boyunca sana karşı hamle yapan da isimsizdi. Tek bir
+// isim, hem muhalefet sahnesini hem seçim gecesini somutlaştırıyor — mekanik
+// maliyeti sıfır, anlatısal karşılığı yüksek.
+//
+// Bütçe komisyonu geçmişi bilerek seçildi: muhalefetin ilk hamlesi
+// (siy-muh-1) bütçe uzlaşmasıdır, yani karşındaki kendi alanında geliyor.
+const MUHALEFET_LIDERI = {
+  ad: "Nuray Ergin",
+  soyad: "Ergin",
+  unvan: "Ana muhalefet lideri",
+  arkaPlan:
+    "Üç dönem milletvekilliği yaptı, iki yıl bütçe komisyonuna başkanlık etti. Sayıları senden iyi bilir.",
+};
+
+// ---------- MUHALEFET HAMLESİ (Doküman Bölüm 15) ----------
+// Oyunun en çok dile getirilen tasarım açığı: hiçbir şey oyuncuya karşı
+// kendiliğinden hareket etmiyordu. Şüphe göstergesi içsel bir karşı-güçtü
+// (oyuncunun kendi riskli hamlelerinin birikimi); bu üçü dışsal karşı-güç —
+// meclisteki muhalefetin, oyuncu ne yaparsa yapsın, oyunda tam bir kez
+// kendi inisiyatifiyle sahneye çıktığı an.
+//
+// Eskiden bu üçü Siyaset bölümünde oyuncunun kendi seçtiği sıradan eylemlerdi
+// (kategori: "Muhalefet"). İçerik aynen korundu, sadece teslimat şekli
+// değişti: artık panelden tıklanmıyorlar, muhalefetKontrol() tarafından
+// otomatik tetikleniyorlar — oyuncu onlara gitmiyor, onlar oyuncuya geliyor.
+const MUHALEFET_HAMLELERI = [
+  {
+    id: "siy-muh-1",
+    kategori: "Muhalefet",
+    tur: "KARARNAME",
+    ad: "Muhalefetle Bütçe Uzlaşması",
+    metin:
+      "Bütçe komisyonunda muhalefetin oyu olmadan sayılar tutmuyor. Grup başkanvekili masaya iki liste koydu: biri taviz, biri şart.",
+    secenekler: [
+      {
+        ad: "Taviz ver, geniş destek al",
+        sonuclar: [
+          {
+            metin: "İki kalemde taviz verildi; bütçe komisyonda geniş oyla onaylandı.",
+            alinti: "Muhalefetten bir komisyon üyesi, «Bu sefer gerçekten dinlediler» diye konuştu.",
+            skor: (s) => 50 + s.ist.onay / 6,
+            etki: { koalisyon: 2, onay: 1, hazine: -3 },
+          },
+          {
+            metin: "Kendi grubundan bazı vekiller tavizleri fazla buldu; grup içi toplantıda gerginlik yaşandı.",
+            alinti: "Grup toplantısına katılan bir vekil, «Bu kadar taviz karşılığında ne aldık» diye sitem etti.",
+            skor: (s) => 50 + (60 - s.kollar.partiSadakati) / 4,
+            etki: { koalisyon: 1, onay: -2, hazine: -3 },
+          },
+        ],
+      },
+      {
+        ad: "Taviz verme, çoğunlukla geçir",
+        sonuclar: [
+          {
+            metin: "Bütçe taviz verilmeden oylandı; koalisyon oylarıyla kıl payı geçti.",
+            alinti: "Oylamayı izleyen bir muhabir, «Salon sessizdi, sonuç belliydi ama gerginlik hissediliyordu» kaydetti.",
+            skor: (s) => 50 + s.ist.istikrar / 6,
+            etki: { onay: 1, istikrar: 1, koalisyon: -1 },
+          },
+          {
+            metin: "Muhalefet oylamadan çekildi; komisyon tutanağına «tek taraflı bütçe» ibaresi düşüldü.",
+            alinti: "Muhalefet grup başkanvekili, «Bizimle değil, bize rağmen geçirdiler» diye ifade etti.",
+            skor: (s) => 50 + (50 - s.ist.istikrar) / 4,
+            etki: { koalisyon: -1, istikrar: -1 },
+          },
+        ],
+      },
+      {
+        ad: "Muhalefetin kaynaklarını denetimle kurut",
+        riskli: true,
+        gizli: true,
+        sonuclar: [
+          {
+            metin: "Muhalefet belediyelerine yönelik mali denetim sıklaştırıldı; itiraz süreleri uzadı.",
+            alinti: "Denetim ekibiyle çalışan bir müfettiş, «Talimat geldi, biz de gittik» dedi.",
+            skor: (s) => 50 + s.kollar.basinDenetimi / 4,
+            etki: { koalisyon: 2, hazine: 1, supheDegisim: 8 },
+          },
+          {
+            ifsa: true,
+            metin: "Denetimlerin zamanlaması dikkat çekti; sadece muhalefet belediyelerine yoğunlaştığı tabloyla gösterildi.",
+            alinti: "Konuyu araştıran bir gazeteci, «Aynı dönemde bizim belediyelere hiç denetim gitmemiş» diye ifade etti.",
+            skor: (s) => 50 + s.kollar.yargiBagimsizligi / 4,
+            etki: { koalisyon: 1, onay: -2, supheDegisim: 13 },
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "siy-muh-2",
+    kategori: "Muhalefet",
+    tur: "KANUN",
+    buyuk: true,
+    ad: "Meclis İçtüzük Değişikliği",
+    metin:
+      "Bir tasarı üç haftadır kürsüde; muhalefetin konuşma süresi dolmuyor. İçtüzüğü değiştirmek elinde — ama bu bir demokrasi tartışmasını da açar.",
+    secenekler: [
+      {
+        ad: "Konuşma sürelerini kısalt, yasama hızlansın",
+        sonuclar: [
+          {
+            metin: "Yeni içtüzük kabul edildi; bekleyen dört tasarı aynı hafta oylamaya girdi.",
+            alinti: "Meclis muhabiri bir gazeteci, «Üç haftalık tıkanıklık bir günde açıldı» diye konuştu.",
+            skor: (s) => s.koalisyon,
+            etki: { koalisyon: 1, istikrar: 1, onay: -2, kuresel: -1 },
+          },
+          {
+            metin: "Muhalefet oturumu terk etti; salonun boş sıraları o akşam haber görüntüsü oldu.",
+            alinti: "Salonu terk eden bir muhalefet vekili, «Konuşamıyorsak burada oturmanın anlamı yok» diye ifade etti.",
+            skor: (s) => 50 + (60 - s.ist.onay) / 3.5,
+            etki: { koalisyon: 1, onay: -3, kuresel: -2, istikrar: -1 },
+          },
+        ],
+      },
+      {
+        ad: "Uzlaşma komisyonu kur, birlikte yaz",
+        sonuclar: [
+          {
+            metin: "Komisyon iki partiden eşit üyeyle kuruldu; ilk taslak altı haftada ortaklaşa yazıldı.",
+            alinti: "Komisyonda yer alan muhalefet vekili, «İlk kez masaya oturup birlikte yazdık» dedi.",
+            skor: (s) => 50 + s.kollar.hukumetSeffafligi / 5,
+            etki: { istikrar: 2, onay: 1, koalisyon: 1, hazine: -1 },
+            gecikmeli: { kuresel: 2 },
+            gecikmeliMetin: "Uzlaşmayla kabul edilen içtüzük değişikliği uluslararası parlamento gözlem raporlarında örnek gösterildi.",
+          },
+          {
+            metin: "Komisyon üç toplantı sonra tıkandı; taraflar aynı maddede anlaşamadı.",
+            alinti: "Komisyon sözcüsü bir vekil, «Altı hafta harcadık, tek madde bile yazamadık» diye sitem etti.",
+            skor: (s) => 50 + (60 - s.koalisyon) / 4,
+            etki: { onay: -1, istikrar: -1 },
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "siy-muh-3",
+    kategori: "Muhalefet",
+    tur: "OPERASYON",
+    bekleme: 4,
+    ad: "Erken Seçim Tehdidi",
+    metin:
+      "Muhalefet üç gündür aynı tasarıyı meclise sokturmuyor. Kurmaylardan biri masaya erken seçim kartını koyuyor: «Blöf de olsa, gündemi değiştirir.»",
+    secenekler: [
+      {
+        ad: "Açıkça tehdit et, muhalefeti geri adıma zorla",
+        sonuclar: [
+          {
+            metin: "Erken seçim çıkışı ertesi gün muhalefeti masaya döndürdü; tıkanan tasarı gündeme alındı.",
+            alinti: "Kararı öğrenen bir borsa yorumcusu, «Piyasa önce tedirgin oldu, sonra rahatladı» diye konuştu.",
+            skor: (s) => 50 + s.ist.onay / 5,
+            etki: { koalisyon: 2, istikrar: 1, kuresel: -1 },
+          },
+          {
+            metin: "Muhalefet çıkışa meydan okudu; üç gün boyunca kur oynaklığı arttı.",
+            alinti: "Bir döviz bürosu çalışanı, «Müşteriler sabah farklı, akşam farklı kur soruyordu» kaydetti.",
+            skor: (s) => 50 + (62 - s.ist.onay) / 3.5,
+            etki: { koalisyon: -1, istikrar: -2, hazine: -2, kuresel: -1 },
+          },
+        ],
+      },
+      {
+        ad: "Kapalı kapılar ardında pazarlık yap",
+        sonuclar: [
+          {
+            metin: "Kapalı görüşmede iki madde üzerinde anlaşıldı; tasarı sessizce gündeme alındı.",
+            alinti: "Görüşmeye katılan bir danışman, «Kimse manşet istemedi, ikimiz de» diye ifade etti.",
+            skor: (s) => 50 + s.koalisyon / 6,
+            etki: { koalisyon: 1, istikrar: 1, kuresel: -1 },
+          },
+          {
+            metin: "Kapalı pazarlığın tutanağı bir muhalefet vekilince ifşa edildi.",
+            alinti: "İfşa eden vekil, «Kapalı kapı arkasında halkın adına konuşulmaz» diye sitem etti.",
+            skor: (s) => 50 + (65 - s.kollar.hukumetSeffafligi) / 4,
+            etki: { onay: -2, kuresel: -1 },
+          },
+        ],
+      },
+    ],
+  },
+];
+
 // ============================================================
 //  MOTOR — saf fonksiyonlar
 // ============================================================
@@ -2092,21 +2269,95 @@ const BASLANGIC_KOLLAR = {
   basinDenetimi: 40,
 };
 
-function yeniOyun(secilenVaatler) {
-  const kpi = { gsyih: 55, istihdam: 52, halkSagligi: 58, hazirlik: 55 };
+// Devraldığın ülke. Bir oyunda içeriğin ancak üçte biri görülüyor; aynı içeriği
+// farklı bir baskı sırasıyla oynatmak, yeni eylem yazmadan tekrar oynanabilirlik
+// kazandırmanın en ucuz yolu. Her senaryo bir göstergeyi bilerek kırar ve
+// karşılığında başka birini güçlendirir — kolay/zor değil, farklı.
+//
+// Vaat hedefleri başlangıca göreli olduğu için senaryolar vaat adaletini
+// bozmaz: küresel itibarı 38'de başlayan bir ülkede hedef de birlikte iner.
+const BASLANGIC_SENARYOLARI = [
+  {
+    id: "dengeli",
+    zorluk: "Standart",
+    ad: "Dengeli Devir",
+    ozet: "Ne kriz ne bolluk",
+    aciklama:
+      "Devir teslim sorunsuz geçti. Ne devraldığın bir enkaz var ne de hazır bir zafer. Yolu kendin çizeceksin.",
+    durum: {},
+  },
+  {
+    id: "yipranmis",
+    zorluk: "Çok zor",
+    ad: "Yıpranmış Devir",
+    ozet: "Kasa da boş, sabır da",
+    aciklama:
+      "Önceki yönetim kasayı boşalttı ve karşılığında hiçbir şey alamadı. Halkın sabrı bitmiş, hazine dip seviyede. Önce güveni geri kazanman gerek.",
+    // Onay bilerek koalisyon eşiğinin altında: sandalyen ilk turdan itibaren
+    // erimeye başlar, yani halkı kazanmak yalnızca seçim için değil, yönetebilmek
+    // için de acil. Düşük hazine tek başına baskı yaratmıyor — eylemler nüfuzla
+    // ödeniyor — bu yüzden senaryonun asıl ağırlığı onaydadır.
+    durum: { ist: { hazine: 12, onay: 53, istikrar: 57 } },
+  },
+  {
+    id: "bolunmus",
+    zorluk: "Zor",
+    ad: "Bölünmüş Meclis",
+    ozet: "Çoğunluk yok",
+    aciklama:
+      "Seçimi kazandın ama meclisi kazanamadın. Çoğunluğun yok: geçirmek istediğin her kanun önce pazarlık masasından geçecek.",
+    durum: { koalisyon: 46, kollar: { partiSadakati: 58 }, ist: { istikrar: 64 } },
+  },
+  {
+    id: "yalniz",
+    zorluk: "Zor",
+    ad: "Yalnız Ülke",
+    ozet: "Dışarıda kimse yok",
+    aciklama:
+      "Ülke uzun süredir masaların dışında. Sınırların içinde düzen var, dışında telefonlarına çıkan yok.",
+    durum: { ist: { kuresel: 38, istikrar: 64 }, kpi: { hazirlik: 62 } },
+  },
+];
+
+function senaryoBul(id) {
+  return BASLANGIC_SENARYOLARI.find((x) => x.id === id) || BASLANGIC_SENARYOLARI[0];
+}
+
+function yeniOyun(secilenVaatler, senaryoId) {
+  const senaryo = senaryoBul(senaryoId);
+  const y = senaryo.durum;
+  const kpi = { gsyih: 55, istihdam: 52, halkSagligi: 58, hazirlik: 55, ...(y.kpi || {}) };
+  const ist = { onay: 58, hazine: 30, istikrar: 60, kuresel: 55, nufuz: 14, ...(y.ist || {}) };
+  const kollar = { ...BASLANGIC_KOLLAR, ...(y.kollar || {}) };
+  const koalisyon = y.koalisyon != null ? y.koalisyon : 51;
+
+  // Bloklar, senaryonun onay değeri neyse ona göre topluca kaydırılır: seçmen
+  // bileşimi korunur (kentli hep en soğuk, muhafazakâr hep en sıcak başlar),
+  // yalnızca genel seviye senaryoya uyar. Ağırlıklı ortalaması ist.onay'a eşit.
+  const kayma = ist.onay - BLOK_TOPLAM(
+    Object.fromEntries(SECMEN_BLOKLARI.map((b) => [b.k, b.baslangic]))
+  );
+  const bloklar = Object.fromEntries(
+    SECMEN_BLOKLARI.map((b) => [b.k, kirp(b.baslangic + kayma)])
+  );
+  ist.onay = BLOK_TOPLAM(bloklar);
   return {
     faz: "panel",
     tur: 1,
-    ist: { onay: 58, hazine: 40, istikrar: 60, kuresel: 55, nufuz: 14 },
+    senaryoId: senaryo.id,
+    ist,
     kpi,
-    koalisyon: 51, // tam olarak yeter sayı — kıl payı çoğunluk
+    bloklar,
+    koalisyon, // varsayılanda tam olarak yeter sayı — kıl payı çoğunluk
     koalisyonBirikim: 0, // tam sandalyeye ulaşmamış siyasi baskı
     suphe: 0,
     supheGorundu: false, // ilk riskli hamleye kadar panelde gizli
     kisitlamaBitis: 0,   // yetki kısıtlamasının biteceği tur
     kademeGecmisi: [],   // hangi şüphe kademeleri yaşandı
-    kollar: { ...BASLANGIC_KOLLAR },
-    onceki: { onay: 58, hazine: 40, istikrar: 60, kuresel: 55, nufuz: 14, koalisyon: 51 },
+    muhalefetTetiklendi: false, // muhalefet hamlesi oyunda bir kez yaşandı mı
+    muhalefetEylemId: null,     // hangi sahne tetiklendi
+    kollar,
+    onceki: { ...ist, koalisyon },
     nakit: { giren: 0, cikan: 0 }, // son kapanıştan bu yana hazine hareketi
     kolDegisimi: {}, // bu turda kaç puan oynandı
     kullanim: {}, // eylemId → başarıyla uygulandığı tur
@@ -2117,7 +2368,9 @@ function yeniOyun(secilenVaatler) {
     arsiv: [],
     gunluk: [],
     vaatler: secilenVaatler,
-    baslangic: { ...kpi, ...BASLANGIC_KOLLAR },
+    // Vaat hedefleri buradan okunur; istikrar ve küresel itibar da dahil edildi
+    // ki mutlak hedefler senaryolarda haksızlık yaratmasın.
+    baslangic: { ...kpi, ...kollar, istikrar: ist.istikrar, kuresel: ist.kuresel },
   };
 }
 
@@ -2128,6 +2381,29 @@ function etkiMetni(anahtar, deger) {
   const buyukluk = Math.abs(deger);
   if (anahtar === "hazine") return `${ETIKET[anahtar]} ${isaret}$${buyukluk}B`;
   return `${ETIKET[anahtar]} ${isaret}${buyukluk}`;
+}
+
+// Çoğu göstergede artı iyidir — ama şüphede tam tersi: şüphenin yükselmesi
+// oyuncunun aleyhinedir. Rozet rengi bu yüzden ham işarete değil, sonucun
+// oyuncu için iyi olup olmadığına bakmalı. Sayının işareti olduğu gibi kalır
+// (şüphe gerçekten 22 puan arttıysa «+22» doğrudur), yalnızca renk düzelir.
+const TERS_KUTUP = ["supheDegisim"];
+function etkiIyiMi(anahtar, deger) {
+  return TERS_KUTUP.includes(anahtar) ? deger < 0 : deger > 0;
+}
+
+// Bir hamlenin halka açık olup olmadığı. `gizli`, `riskli` gibi hem eylem hem
+// yaklaşım düzeyinde konabilir: Gizli İşler eylemlerinin tamamı gizlidir (dosyayı
+// imha etmek de gizli bir iştir), buna karşılık sıradan bir eylemin içindeki tek
+// bir kirli yaklaşım da gizli olabilir.
+//
+// `ifsa` bunu sonuç düzeyinde geri çevirir: iş patladıysa, sızdıysa, canlı yayında
+// açıklandıysa artık gizli değildir — gazeteye çıkar. Riskin bedeli zaten budur.
+// Alenî otoriter hamleler (sokakta görünen bir özel birim, yayımlanan bir kanun)
+// bilerek gizli işaretlenmemiştir; onların yeri gazetedir.
+function gizliMi(eylem, secenek, kazanan) {
+  const gizliHamle = !!((eylem && eylem.gizli) || (secenek && secenek.gizli));
+  return gizliHamle && !(kazanan && kazanan.ifsa);
 }
 
 // Para tutarlarını temiz yazar: 2.40000000000000004 → "2.4" · 9.0 → "9"
@@ -2144,6 +2420,19 @@ function kirp(n) {
 // KANUN ve KARARNAME tek seferliktir: aynı yasa iki kez çıkarılmaz.
 // OPERASYON tekrarlanabilir ama kendi bekleme süresi vardır.
 function eylemDurumu(s, eylem) {
+  // Kanun imzadan KANUN_YURURLUK tur sonra yürürlüğe girer; belge ömrü son
+  // yarıyılın kapanışında bir kez daha ilerler, yani yürürlük turu TOPLAM_TUR+1
+  // olan kanun hâlâ yetişir (tur 9 çalışır). Tur 10'da imzalanan kanun ise
+  // yetişmez: oyuncu 5 nüfuz harcar, oylamayı kazanır, belgeyi görür ve hiçbir
+  // şey olmaz. Bu sessiz kayıp yerine eylem baştan kapatılır.
+  if (eylem.tur === "KANUN" && s.tur + KANUN_YURURLUK > TOPLAM_TUR + 1) {
+    return {
+      acik: false,
+      etiket: "Süre yetmez",
+      sebep: `Kanun ${KANUN_YURURLUK} yarıyıl sonra yürürlüğe girer; görev süren bitmeden yetişmez.`,
+    };
+  }
+
   // Yetki kısıtlaması sürerken yalnızca Meclis onaylı kanunlar işleme girer.
   if (kisitlamaVar(s) && eylem.tur !== "KANUN") {
     return {
@@ -2210,19 +2499,38 @@ function verimKatsayisi(anahtar, mevcut) {
   return Math.max(0.25, 1 - (mevcut - VERIM_ESIGI) / 40);
 }
 
-function etkiUygula(s, etki) {
+// `egilim` verilmezse nötr dağıtım yapılır — yani onay tüm bloklara eşit iner
+// ve toplam davranış blok sistemi eklenmeden önceki haliyle birebir aynı olur.
+// Bu bilinçli bir varsayılan: eğilim geçirmeyi unuttuğum bir çağrı yeri
+// dengeyi sessizce bozmaz, yalnızca ayrımı kaybeder.
+function etkiUygula(s, etki, egilim) {
   const ist = { ...s.ist };
   const kpi = { ...s.kpi };
+  const bloklar = { ...(s.bloklar || {}) };
   let koalisyon = s.koalisyon;
   let suphe = s.suphe || 0;
   let supheGorundu = s.supheGorundu || false;
   const nakit = { ...(s.nakit || { giren: 0, cikan: 0 }) };
 
   Object.entries(etki).forEach(([k, v]) => {
-    if (k === "hazine") {
-      // Kasaya giren ve çıkan ayrı ayrı tutulur ki panelde döküm gösterilebilsin.
+    if (k === "onay") {
+      // Onay doğrudan yazılmaz; bloklara dağıtılır ve onlardan türetilir.
+      const pay = blokDagit(v, egilim);
+      SECMEN_BLOKLARI.forEach((b) => {
+        const d = pay[b.k];
+        bloklar[b.k] = kirp(
+          bloklar[b.k] + (d > 0 ? d * verimKatsayisi("onay", bloklar[b.k]) : d)
+        );
+      });
+      ist.onay = BLOK_TOPLAM(bloklar);
+    } else if (k === "hazine") {
+      // Hazine sıfırda DURMUYOR; devlet borçlanabilir. Eskiden burada
+      // Math.max(0, ...) vardı ve bu, oyunun ekonomi ayağını dekoratif
+      // kılıyordu: eylemler nüfuzla ödendiği için boş kasayla oynamanın
+      // hiçbir bedeli yoktu. Artık eksiye düşülür ve borç her tur faturasını
+      // keser (bkz. turSonu'ndaki bütçe baskısı).
       const oncekiHazine = ist.hazine;
-      ist.hazine = Math.max(0, ist.hazine + v);
+      ist.hazine = ist.hazine + v;
       const gercekFark = ist.hazine - oncekiHazine;
       if (gercekFark > 0) nakit.giren += gercekFark;
       else if (gercekFark < 0) nakit.cikan += -gercekFark;
@@ -2241,7 +2549,7 @@ function etkiUygula(s, etki) {
     }
   });
 
-  return { ...s, ist, kpi, koalisyon, suphe, supheGorundu, nakit };
+  return { ...s, ist, kpi, bloklar, koalisyon, suphe, supheGorundu, nakit };
 }
 
 // Deterministik sonuç: skoru yüksek olan gerçekleşir (Doküman Bölüm 5)
@@ -2285,8 +2593,20 @@ function vergiGeliri(s) {
   return Math.round(oran * carpan * 10) / 10;
 }
 
+// Siyasi sermaye durumdan beslenir. Eskiden sabit +6 idi: hiçbir içerik, hiçbir
+// gösterge nüfuzu etkilemiyordu — kapalı bir metronomdu ve tur 3'ten sonra
+// tavana çarpıp boşa akıyordu. Artık halk desteği ve meclisteki rahatlık hamle
+// alanı açar, ikisinin de olmaması eli kolu bağlar.
+//
+// Başlangıç durumunda (onay 58, koalisyon 51) sonuç bilerek tam 6'dır — mevcut
+// denge referansları bu yüzden kaymaz.
 function nufuzKazanci(s) {
-  return 6 + (s.ist.onay > 65 ? 1 : 0);
+  const onayKatki = s.ist.onay > 65 ? 2 : s.ist.onay > 55 ? 1 : 0;
+  const meclisKatki = s.koalisyon >= BUYUK_BARAJ ? 1 : s.koalisyon >= BARAJ ? 0 : -1;
+  // Taban 3, kararname maliyetiyle aynı: siyaseten dibe vurmuş bir başkan bile
+  // her yarıyıl en az bir kararname imzalayabilir. Oyun hiçbir durumda oyuncuyu
+  // hamlesiz bırakmaz — yalnızca seçeneklerini daraltır.
+  return Math.max(3, 5 + onayKatki + meclisKatki);
 }
 
 // Tur sonu (Doküman Bölüm 10)
@@ -2309,12 +2629,38 @@ function turSonu(s) {
   rapor.gider = Math.round((sosyalGider + guvenlikGider + askeriGider) * 10) / 10;
   rapor.giderKalem = { sosyal: sosyalGider, guvenlik: guvenlikGider, askeri: askeriGider };
 
+  // 2b) Borcun faturası. Gelir ve giderden SONRA bakılır: o turda kasayı
+  // toparladıysan borçlu sayılmazsın, borç ancak yarıyıl kapanışında da
+  // eksideysen işler.
+  const baski = butceBaskisi(yeni.ist.hazine);
+  if (baski) {
+    yeni = etkiUygula(yeni, {
+      hazine: -baski.faiz,
+      istikrar: baski.istikrar,
+      nufuz: baski.nufuz,
+    });
+    // Borcun onay faturasını en çok emekçi seçmen öder: kesilen ilk şey
+    // maaş, ödenek ve hizmettir.
+    yeni = etkiUygula(yeni, { onay: baski.onay }, KOL_EGILIMI.sosyalYardim);
+    rapor.borc = baski;
+  }
+
+  // Kolların onay etkisi kol kol tutulur: üçü de onaya yazılır ama üçü farklı
+  // seçmene hitap eder — sosyal yardım emekçiye, şeffaflık kentliye. Tek bir
+  // toplam sayı olarak dağıtılsalardı bu ayrım kaybolurdu.
+  const kolOnayKalem = {
+    sosyalYardim: (yeni.kollar.sosyalYardim - BASLANGIC_KOLLAR.sosyalYardim) / 14,
+    gelirVergisi: -(yeni.kollar.gelirVergisi - BASLANGIC_KOLLAR.gelirVergisi) / 12,
+    hukumetSeffafligi:
+      (yeni.kollar.hukumetSeffafligi - BASLANGIC_KOLLAR.hukumetSeffafligi) / 25,
+  };
+
   // Kolların istatistiklere etkisi
   const kolEtki = {
     onay:
-      (yeni.kollar.sosyalYardim - BASLANGIC_KOLLAR.sosyalYardim) / 14 -
-      (yeni.kollar.gelirVergisi - BASLANGIC_KOLLAR.gelirVergisi) / 12 +
-      (yeni.kollar.hukumetSeffafligi - BASLANGIC_KOLLAR.hukumetSeffafligi) / 25,
+      kolOnayKalem.sosyalYardim +
+      kolOnayKalem.gelirVergisi +
+      kolOnayKalem.hukumetSeffafligi,
     istikrar:
       (yeni.kollar.guvenlikButcesi - BASLANGIC_KOLLAR.guvenlikButcesi) / 14 +
       (yeni.kollar.disPolitika - BASLANGIC_KOLLAR.disPolitika) / 22,
@@ -2337,13 +2683,25 @@ function turSonu(s) {
     yeni = { ...yeni, suphe: Math.max(0, yeni.suphe - yatisma) };
     rapor.supheYatisma = Math.round(yatisma * 10) / 10;
   }
+  // Yuvarlama yalnızca gösterim içindir. Eskiden yuvarlanmış değer UYGULANIYORDU
+  // ve bu bir ölü bölge yaratıyordu: böleni 22-30 olan kollarda (dış politika,
+  // şeffaflık, yargı, basın) 3 puandan küçük oynatmalar 0.0'a yuvarlanıp yok
+  // oluyordu — oyuncu puan başına 2 nüfuz ödeyip hiçbir şey almıyordu. Artık
+  // ham değer işliyor; her puanın karşılığı var.
   rapor.kolEtki = {
     onay: Math.round(kolEtki.onay * 10) / 10,
     istikrar: Math.round(kolEtki.istikrar * 10) / 10,
     kuresel: Math.round(kolEtki.kuresel * 10) / 10,
     hazirlik: Math.round(kolEtki.hazirlik * 10) / 10,
   };
-  yeni = etkiUygula(yeni, rapor.kolEtki);
+  yeni = etkiUygula(yeni, {
+    istikrar: kolEtki.istikrar,
+    kuresel: kolEtki.kuresel,
+    hazirlik: kolEtki.hazirlik,
+  });
+  Object.entries(kolOnayKalem).forEach(([kol, v]) => {
+    if (v) yeni = etkiUygula(yeni, { onay: v }, KOL_EGILIMI[kol]);
+  });
 
   // 3) Yıpranma — hiçbir hükümet yerinde sayarak ayakta kalamaz.
   //    Oyunun varsayılan gidişatı düşüştür; oyuncunun işi bununla savaşmaktır.
@@ -2363,13 +2721,14 @@ function turSonu(s) {
   const bekleyen = [];
   (yeni.bekleyenEtkiler || []).forEach((b) => {
     if (yeni.tur + 1 >= b.tur) {
-      yeni = etkiUygula(yeni, b.etki);
+      yeni = etkiUygula(yeni, b.etki, KATEGORI_EGILIMI[b.kategori]);
       rapor.haberler.push({
         tip: "gecikmeli",
         ad: b.kaynak,
-        belgeTuru: "SONUÇ",
+        belgeTuru: b.gizli ? "GİZLİ" : "SONUÇ",
         metin: b.metin,
         etki: b.etki,
+        gizli: !!b.gizli,
       });
     } else {
       bekleyen.push(b);
@@ -2383,15 +2742,20 @@ function turSonu(s) {
 
   yeni.belgeler.forEach((b) => {
     if (b.durum === "onaylandi" && gelecekTur >= b.yururlukTuru) {
-      yeni = etkiUygula(yeni, b.etki);
+      yeni = etkiUygula(yeni, b.etki, KATEGORI_EGILIMI[b.kategori]);
       if (b.gecikmeli) {
         bekleyen.push({
           tur: gelecekTur + ETKI_GECIKMESI,
           kaynak: b.ad,
+          kategori: b.kategori,
           metin: b.gecikmeliMetin || "Düzenlemenin asıl etkisi şimdi hissedildi.",
           etki: b.gecikmeli,
+          gizli: !!b.gizli,
         });
       }
+      // Gizli bir kararnamede belgenin kendisi resmen yayımlanır — Resmî Gazete
+      // satırı kalsın diye `belgeTuru` korunur; gizlenen, işin ne olduğunu anlatan
+      // haber metnidir. Kuru resmî kayıt açıkta, anlatı kapalı zarfta.
       rapor.haberler.push({
         tip: "yururluk",
         ad: b.ad,
@@ -2401,17 +2765,19 @@ function turSonu(s) {
         oyToplam: b.oyToplam,
         oyGereken: b.oyGereken,
         etki: b.etki,
+        gizli: !!b.gizli,
       });
       if (b.tamamlanmaTuru) belgeler.push({ ...b, durum: "yururlukte" });
       else arsiv.push({ ...b, durum: "tamamlandi" });
     } else if (b.durum === "yururlukte" && gelecekTur >= b.tamamlanmaTuru) {
-      yeni = etkiUygula(yeni, b.etki);
+      yeni = etkiUygula(yeni, b.etki, KATEGORI_EGILIMI[b.kategori]);
       rapor.haberler.push({
         tip: "tamamlanma",
         ad: b.ad,
         belgeTuru: b.tur,
         metin: "Program tamamlandı; etkisi ikinci kez hissedildi.",
         etki: b.etki,
+        gizli: !!b.gizli,
       });
       arsiv.push({ ...b, durum: "tamamlandi" });
     } else {
@@ -2422,8 +2788,21 @@ function turSonu(s) {
   // 6) Koalisyon kayması
   // Sandalye kesirli olmaz. Baskı arka planda birikir; ancak tam bir sandalyeye
   // ulaşınca meclis aritmetiği değişir.
+  //
+  // Koalisyon üç kaynaktan beslenir: halk desteği, parti sadakati ve verilen
+  // sözlerin tutulup tutulmadığı. Üçü de ihmal edilirse meclis çoğunluğu erir.
+  const tutulmayanVaat =
+    gelecekTur > VAAT_BASKI_TURU
+      ? (yeni.vaatler || []).filter((vid) => {
+          const v = VAATLER.find((x) => x.id === vid);
+          return v && !vaatDurumu(v, yeni).tutuldu;
+        }).length
+      : 0;
   const kayma =
-    (yeni.ist.onay - KOALISYON_ESIGI) / 12 + (yeni.kollar.partiSadakati - 50) / 22;
+    (yeni.ist.onay - KOALISYON_ESIGI) / 12 +
+    (yeni.kollar.partiSadakati - 50) / 22 -
+    tutulmayanVaat * VAAT_BASKI_KAYMA;
+  rapor.vaatBaskisi = tutulmayanVaat;
   const birikim = (yeni.koalisyonBirikim || 0) + kayma;
   const sandalyeDegisimi = Math.trunc(birikim);
   const yeniKoalisyon = Math.max(
@@ -2432,18 +2811,17 @@ function turSonu(s) {
   );
   rapor.koalisyonKayma = sandalyeDegisimi;
 
-  rapor.durum = {
-    onay: yeni.ist.onay,
-    istikrar: yeni.ist.istikrar,
-    kuresel: yeni.ist.kuresel,
-    hazine: yeni.ist.hazine,
-    koalisyon: yeniKoalisyon,
-  };
   rapor.tur = yeni.tur;
+
+  // Kaymadan sonraki sandalye sayısı artık state'in kendisine yazılır. Eskiden
+  // yalnızca yerel bir değişkende tutuluyordu ve return'de state'in üstüne
+  // basılıyordu; bu yüzden şüphe kademelerinin koalisyon cezası (−2 / −3)
+  // sessizce kayboluyordu — yalnızca onay cezası işliyordu.
+  yeni = { ...yeni, koalisyon: yeniKoalisyon };
 
   // Yarıyıl kapanışında şüphe kademesi tetiklendi mi?
   const sonrakiTur = yeni.tur + 1;
-  const kademe = kademeKontrol({ ...yeni, koalisyon: yeniKoalisyon, tur: sonrakiTur });
+  const kademe = kademeKontrol({ ...yeni, tur: sonrakiTur });
   if (kademe) {
     yeni = etkiUygula(yeni, kademe.etki);
     rapor.kademe = kademe;
@@ -2456,6 +2834,24 @@ function turSonu(s) {
     };
   }
 
+  // Gazete, kademe cezaları uygulandıktan SONRAKİ tabloyu göstermeli; aksi halde
+  // kademe turunda kağıt ile panel farklı sayılar yazar.
+  rapor.durum = {
+    onay: yeni.ist.onay,
+    istikrar: yeni.ist.istikrar,
+    kuresel: yeni.ist.kuresel,
+    hazine: yeni.ist.hazine,
+    koalisyon: yeni.koalisyon,
+  };
+  // Manşet seçimi eşiğin GEÇİLDİĞİ anı yakalayabilsin diye yarıyıl başındaki
+  // tablo da rapora yazılır.
+  rapor.oncekiDurum = onceki;
+
+  // Görevden alınmıyorsa, muhalefetin oyunda tam bir kez sahneye çıkıp
+  // çıkmayacağı bu turun kapanışında kontrol edilir.
+  const oyunBittiMi = kademe && kademe.oyunBitti;
+  const muhalefetId = oyunBittiMi ? null : muhalefetKontrol(yeni, gelecekTur);
+
   return {
     ...yeni,
     belgeler,
@@ -2463,12 +2859,19 @@ function turSonu(s) {
     bekleyenHaberler: [],
     arsiv,
     onceki,
-    koalisyon: yeniKoalisyon,
     koalisyonBirikim: birikim - sandalyeDegisimi,
     tur: gelecekTur,
     kolDegisimi: {},
     gunluk: rapor,
-    faz: kademe && kademe.oyunBitti ? "azil" : gelecekTur > TOPLAM_TUR ? "secim" : "panel",
+    muhalefetTetiklendi: yeni.muhalefetTetiklendi || !!muhalefetId,
+    muhalefetEylemId: muhalefetId || yeni.muhalefetEylemId || null,
+    faz: oyunBittiMi
+      ? "azil"
+      : muhalefetId
+      ? "muhalefet"
+      : gelecekTur > TOPLAM_TUR
+      ? "secim"
+      : "panel",
   };
 }
 
@@ -2480,16 +2883,28 @@ function mansetSec(rapor) {
   if (rapor.kademe)
     return { baslik: rapor.kademe.baslik, spot: rapor.kademe.metin, agir: true };
 
-  if (d.onay < 35)
-    return { baslik: "SOKAK HÜKÜMETE SIRTINI DÖNÜYOR", spot: "Onay oranı kritik eşiğin altında; kabine sarsıntıda.", agir: true };
-  if (d.koalisyon < BARAJ)
+  // Kriz manşetleri DURUM değil OLAY bildirir: yalnızca eşiğin geçildiği
+  // yarıyılda basılır. Eskiden koşul doğru kaldığı sürece her tur aynı manşet
+  // tekrarlanıyordu — koalisyon barajın altına bir kez düşünce oyunun geri
+  // kalanında gazete başka hiçbir şey yazmıyordu.
+  const o = rapor.oncekiDurum || {};
+  const yeniGecti = (simdi, once, esik) => simdi < esik && !(once < esik);
+
+  if (yeniGecti(d.onay, o.onay, 35))
+    return { baslik: "SOKAK HÜKÜMETE SIRTINI DÖNÜYOR", spot: "Onay oranı kritik eşiğin altına indi; kabine sarsıntıda.", agir: true };
+  if (yeniGecti(d.koalisyon, o.koalisyon, BARAJ))
     return { baslik: "MECLİS ÇOĞUNLUĞU KAYBEDİLDİ", spot: "Koalisyon barajın altına düştü. Artık her tasarı parti sadakatine ve halk desteğine kalmış durumda.", agir: true };
-  if (d.hazine < 10)
+  if (yeniGecti(d.hazine, o.hazine, 0))
+    return { baslik: "DEVLET BORÇLANMAYA BAŞLADI", spot: "Hazine ilk kez eksiye düştü. Faiz bundan sonra her yarıyıl bütçeden kesilecek.", agir: true };
+  if (yeniGecti(d.hazine, o.hazine, 10))
     return { baslik: "HAZİNE DİP SEVİYEDE", spot: "Kasadaki daralma yeni harcamaların önünü kesiyor.", agir: true };
-  if (d.istikrar < 40)
+  if (yeniGecti(d.istikrar, o.istikrar, 40))
     return { baslik: "DÜZEN ÇÖZÜLÜYOR", spot: "Asayiş ve kamu düzeni göstergeleri hızla geriliyor.", agir: true };
 
-  const yururluge = rapor.haberler.find((h) => h.tip === "yururluk");
+  // Gizli işler manşet olamaz — halk onları bilmiyor.
+  const acikHaberler = rapor.haberler.filter((h) => !h.gizli);
+
+  const yururluge = acikHaberler.find((h) => h.tip === "yururluk");
   if (yururluge)
     return {
       baslik: yururluge.ad.toUpperCase() + " YÜRÜRLÜKTE",
@@ -2499,7 +2914,7 @@ function mansetSec(rapor) {
       agir: false,
     };
 
-  const operasyon = rapor.haberler.find((h) => h.tip === "operasyon");
+  const operasyon = acikHaberler.find((h) => h.tip === "operasyon");
   if (operasyon)
     return {
       baslik: operasyon.ad.toUpperCase(),
@@ -2509,7 +2924,7 @@ function mansetSec(rapor) {
       agir: false,
     };
 
-  const biten = rapor.haberler.find((h) => h.tip === "tamamlanma");
+  const biten = acikHaberler.find((h) => h.tip === "tamamlanma");
   if (biten)
     return {
       baslik: biten.ad.toUpperCase() + " TAMAMLANDI",
@@ -2595,6 +3010,42 @@ function kisitlamaVar(s) {
   return (s.kisitlamaBitis || 0) > s.tur;
 }
 
+// Muhalefet hamlesi: dışsal karşı-güç (Doküman Bölüm 15).
+// Şüphe göstergesi gizliydi çünkü içsel bir dosyaydı; bu üç eşik panelde
+// zaten açık olan hazine/koalisyon/onay üzerine kurulu — gizli bir gösterge
+// eklemek yerine oyuncunun zaten izlediği sayılara bağlandı. Oyunda tam bir
+// kez tetiklenir: göstergelerden biri gerçekten eşiği geçerse hemen, hiçbiri
+// geçmezse MUHALEFET_ZORLA_TUR'da en zayıf olan üzerinden zorla.
+const MUHALEFET_HAZINE_ESIGI = 15;
+const MUHALEFET_KOALISYON_ESIGI = 45;
+const MUHALEFET_ONAY_ESIGI = 45;
+const MUHALEFET_ZORLA_TUR = 9;
+
+function muhalefetKontrol(s, gelecekTur) {
+  if (s.muhalefetTetiklendi) return null;
+  if (gelecekTur < 3 || gelecekTur > TOPLAM_TUR) return null;
+
+  // Her göstergeyi kendi eşiğine oranlayarak karşılaştırılabilir hale getirir;
+  // 1'in altı, o göstergenin eşiği geçtiği anlamına gelir.
+  const durumlar = [
+    { id: "siy-muh-1", oran: s.ist.hazine / MUHALEFET_HAZINE_ESIGI },
+    { id: "siy-muh-2", oran: s.koalisyon / MUHALEFET_KOALISYON_ESIGI },
+    { id: "siy-muh-3", oran: s.ist.onay / MUHALEFET_ONAY_ESIGI },
+  ];
+
+  const kritik = durumlar.filter((d) => d.oran < 1);
+  if (kritik.length > 0) {
+    kritik.sort((a, b) => a.oran - b.oran);
+    return kritik[0].id;
+  }
+
+  if (gelecekTur >= MUHALEFET_ZORLA_TUR) {
+    return [...durumlar].sort((a, b) => a.oran - b.oran)[0].id;
+  }
+
+  return null;
+}
+
 // Seçim (Doküman Bölüm 11)
 // Muhalefetin sadık bir tabanı vardır; oy oranı göstergelerin doğrudan ortalaması değildir.
 // Seçim, nötr bir noktadan (57) yukarı ya da aşağı sapma olarak hesaplanır.
@@ -2621,6 +3072,110 @@ function secimHesapla(s) {
   return { performans, temel, vaatDurum, vaatPuan, oy, kazandi: oy > 50 };
 }
 
+// Görev süresinin nasıl kapandığı. Eskiden tek bir ayrım vardı — seçildin ya da
+// kaybettin — ve şüphe izlencesi anlatısal karşılığını hiç almıyordu: temiz
+// yönetip %52 ile kazanmak, yetkileri askıya alınmışken %52 ile kazanmakla
+// aynı ekranı veriyordu. Artık iki eksen okunuyor: sandık ve arkanda bıraktığın
+// dosya. `mansetSec` gibi öncelik sıralıdır — en özel koşul en üstte.
+//
+// Görevden alınma (azil) burada yoktur; onun kendi ekranı var ve oyun orada
+// zaten bitmiştir.
+function finalKarti(s, r) {
+  const gecmis = s.kademeGecmisi || [];
+  const kisitlandi = gecmis.includes("kisitlama");
+  const sorusturuldu = gecmis.includes("sorusturma");
+  const L = MUHALEFET_LIDERI.soyad;
+
+  const borclu = s.ist.hazine < 0;
+
+  if (r.kazandi) {
+    // Dosya, sandıktan önce gelir: nasıl kazandığın ne kadar kazandığından önemli.
+    if (kisitlandi)
+      return {
+        kod: "karanlik-zafer",
+        baslik: "Kazandın, dosya kapanmadı",
+        metin: `Görev süren yenilendi ama yetkilerinin bir dönem askıya alındığı tutanakta duruyor. ${L} yenilgiyi kabul ederken kürsüde tek bir cümle kurdu: «Bu dosya bizimle bitmiyor.»`,
+        ton: "karanlik",
+      };
+    if (sorusturuldu)
+      return {
+        kod: "golgeli-zafer",
+        baslik: "Gölgede kalan zafer",
+        metin: `Sandık seni doğruladı, ama hakkında açılan soruşturmanın dosyası kapanmadı. Zaferin ilk günü, kutlamadan çok açıklamayla geçti.`,
+        ton: "golgeli",
+      };
+    if (borclu)
+      return {
+        kod: "borclu-zafer",
+        baslik: "Kazandın, borcu devraldın",
+        metin: `Sandık seni yeniledi ama hazine eksideki haliyle devredildi. İkinci dönemin ilk maddesi kendi bıraktığın faiz olacak; ${L} bunu kürsüden hatırlatmayı ihmal etmedi.`,
+        ton: "golgeli",
+      };
+    if (r.oy >= 60)
+      return {
+        kod: "ezici-zafer",
+        baslik: "Ezici çoğunlukla yeniden seçildin",
+        metin: `Sonuç tartışmaya yer bırakmadı. ${L} sonuçları sandık kapanmadan kabul etti; muhalefet grubu gece yarısından önce dağıldı.`,
+        ton: "parlak",
+      };
+    if (r.oy <= 52)
+      return {
+        kod: "kil-payi-zafer",
+        baslik: "Kıl payı kazandın",
+        metin: `Fark birkaç puan. Beş yıl daha görevdesin, ama bu sonuç bir yetki değil bir uyarı — ${L} sandık başında bekleyen kalabalığa «Bu bitmedi» dedi.`,
+        ton: "solgun",
+      };
+    return {
+      kod: "temiz-zafer",
+      baslik: "Yeniden seçildin",
+      metin: `Görev süren yenilendi ve arkanda açık bir dosya kalmadı. Devir teslim yok; masandaki işler kaldığı yerden devam ediyor.`,
+      ton: "parlak",
+    };
+  }
+
+  if (kisitlandi)
+    return {
+      kod: "karanlik-yenilgi",
+      baslik: "Hem koltuğu hem dosyayı bıraktın",
+      metin: `Seçimi kaybettin ve yetkilerinin askıya alındığı dönem tutanakta kaldı. Görevi devralan ekip, ilk iş olarak o dosyayı istedi.`,
+      ton: "karanlik",
+    };
+  if (sorusturuldu)
+    return {
+      kod: "golgeli-yenilgi",
+      baslik: "Seçimi kaybettin, soruşturma sürüyor",
+      metin: `Sandık kararını verdi. Hakkındaki inceleme ise görevin bitmesiyle kapanmıyor — dosya yeni yönetime devredildi.`,
+      ton: "karanlik",
+    };
+  if (borclu)
+    return {
+      kod: "borclu-yenilgi",
+      baslik: "Boş bir kasa bırakarak gidiyorsun",
+      metin: `Seçimi kaybettin ve hazineyi eksiden teslim ediyorsun. Devir teslim tutanağına yazılan ilk rakam borç oldu.`,
+      ton: "karanlik",
+    };
+  if (r.oy >= 47)
+    return {
+      kod: "kil-payi-yenilgi",
+      baslik: "Kıl payı kaybettin",
+      metin: `Birkaç puan yetmedi. ${L} kürsüye çıktığında salonun yarısı hâlâ senin adını sayıyordu.`,
+      ton: "solgun",
+    };
+  if (r.oy < 40)
+    return {
+      kod: "agir-yenilgi",
+      baslik: "Ağır bir yenilgi",
+      metin: `Sonuç tartışmasız. Beş yıl boyunca imzaladığın her belge bu gece yeniden konuşuluyor — hiçbiri lehine değil.`,
+      ton: "karanlik",
+    };
+  return {
+    kod: "yenilgi",
+    baslik: "Seçimi kaybettin",
+    metin: `Görev süren doldu ve sandık başkasını işaret etti. Devir teslim için üç hafta var.`,
+    ton: "solgun",
+  };
+}
+
 // ============================================================
 //  KAYIT KATMANI
 // ============================================================
@@ -2632,12 +3187,18 @@ function depoVar() {
   return typeof window !== "undefined" && !!window.localStorage;
 }
 
-async function kayitYaz(durum) {
+// Kayıttan dönerken geri yüklenebilen ekranlar: yalnızca tamamen `durum`dan
+// çizilenler. Muhalefet hamlesi bu listede olmak zorunda — oyunda bir kez gelir
+// ve eskiden kaydedip çıkan oyuncu onu tamamen kaybediyordu, çünkü devam her
+// zaman panele dönüyordu. Gizli dosya da aynı sebeple burada.
+const DEVAM_FAZLARI = ["panel", "gunluk", "gizli", "muhalefet"];
+
+async function kayitYaz(durum, uiFaz) {
   if (!depoVar()) return false;
   try {
     window.localStorage.setItem(
       KAYIT_ANAHTARI,
-      JSON.stringify({ surum: KAYIT_SURUMU, tarih: Date.now(), durum })
+      JSON.stringify({ surum: KAYIT_SURUMU, tarih: Date.now(), durum, uiFaz })
     );
     return true;
   } catch (hata) {
@@ -2703,6 +3264,56 @@ function Degisim({ fark, taban, yuzdeGoster }) {
 }
 
 // Kampanya sözlerinin canlı takibi — seçimde ±30 puan buna bağlı.
+// Onay kutusunun altındaki seçmen dökümü. Onay tek başına ortalamadır; asıl
+// bilgi kimin memnun kimin küs olduğudur — bu şerit onu tek bakışta verir.
+function BlokSerit({ s }) {
+  const bloklar = s.bloklar || {};
+  const degerler = SECMEN_BLOKLARI.map((b) => bloklar[b.k] ?? 0);
+  const enYuksek = Math.max(...degerler);
+  const enDusuk = Math.min(...degerler);
+
+  return (
+    <div className="kutu p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <span className="mono" style={{ fontSize: 10, color: C.solgun, letterSpacing: "0.1em" }}>
+          SEÇMEN
+        </span>
+        <span className="mono" style={{ fontSize: 9, color: C.sonuk }}>
+          ONAY {Math.round(s.ist.onay)} · ORTALAMA
+        </span>
+      </div>
+
+      {SECMEN_BLOKLARI.map((b) => {
+        const deger = bloklar[b.k] ?? 0;
+        const enIyi = deger === enYuksek && enYuksek !== enDusuk;
+        const enKotu = deger === enDusuk && enYuksek !== enDusuk;
+        const renk = enIyi ? C.arti : enKotu ? C.eksi : C.solgun;
+        return (
+          <div key={b.k} className="mb-2.5 last:mb-0">
+            <div className="flex items-center justify-between mb-1">
+              <span className="sans" style={{ fontSize: 12, color: "#F2F4F8" }}>
+                {b.ad}
+                <span className="mono" style={{ fontSize: 9, color: C.sonuk }}>
+                  {" "}%{Math.round(b.agirlik * 100)}
+                </span>
+              </span>
+              <span className="mono tabular-nums" style={{ fontSize: 12, color: renk }}>
+                {Math.round(deger)}
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1C2436" }}>
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${kirp(deger)}%`, background: renk, transition: "width .3s ease" }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function VaatTakip({ s }) {
   return (
     <div className="kutu p-4 mb-6">
@@ -2946,12 +3557,14 @@ export default function TheDirective() {
   const [bolumSekme, setBolumSekme] = useState("eylemler");
   const [iptalAdayi, setIptalAdayi] = useState(null);
   const [secilen, setSecilen] = useState([]);
+  const [secilenSenaryo, setSecilenSenaryo] = useState(BASLANGIC_SENARYOLARI[0].id);
   const [s, setS] = useState(null);
   const [bolumK, setBolumK] = useState(null);
   const [eylemId, setEylemId] = useState(null);
   const [secenekIdx, setSecenekIdx] = useState(null);
   const [sonuc, setSonuc] = useState(null);
   const [oylama, setOylama] = useState(null);
+  const [muhalefetSonuc, setMuhalefetSonuc] = useState(null);
 
   const bolum = bolumK ? BOLUMLER[bolumK] : null;
   const eylem = bolum ? bolum.eylemler.find((e) => e.id === eylemId) : null;
@@ -2962,7 +3575,7 @@ export default function TheDirective() {
     kayitOku().then((paket) => {
       if (iptal) return;
       setKayit(paket);
-      setFaz(paket ? "acilis" : "vaatler");
+      setFaz(paket ? "acilis" : "senaryo");
     });
     return () => {
       iptal = true;
@@ -2972,13 +3585,13 @@ export default function TheDirective() {
   // Oyun ilerledikçe sessizce kaydedilir; dönem bitince kayıt silinir.
   useEffect(() => {
     if (!s) return;
-    if (faz === "yukleniyor" || faz === "acilis" || faz === "vaatler") return;
+    if (faz === "yukleniyor" || faz === "acilis" || faz === "senaryo" || faz === "vaatler") return;
     if (faz === "secim" || faz === "azil") {
       kayitSil();
       return;
     }
     let iptal = false;
-    kayitYaz(s).then((oldu) => {
+    kayitYaz(s, faz).then((oldu) => {
       if (!iptal && oldu) setKayitZamani(Date.now());
     });
     return () => {
@@ -2989,15 +3602,15 @@ export default function TheDirective() {
   function basla() {
     kayitSil();
     setKayit(null);
-    setS(yeniOyun(secilen));
+    setS(yeniOyun(secilen, secilenSenaryo));
     setFaz("panel");
   }
 
   // Oyunu kaydedip ana menüye döner; ilerleme korunur.
   async function anaMenuyeDon() {
     setMenuAcik(false);
-    await kayitYaz(s);
-    setKayit({ surum: KAYIT_SURUMU, tarih: Date.now(), durum: s });
+    await kayitYaz(s, faz);
+    setKayit({ surum: KAYIT_SURUMU, tarih: Date.now(), durum: s, uiFaz: faz });
     setFaz("acilis");
   }
 
@@ -3010,7 +3623,7 @@ export default function TheDirective() {
   function kayittanDevam() {
     if (!kayit) return;
     setS(kayit.durum);
-    setFaz("panel");
+    setFaz(DEVAM_FAZLARI.includes(kayit.uiFaz) ? kayit.uiFaz : "panel");
   }
 
   function yenidenBasla() {
@@ -3026,7 +3639,8 @@ export default function TheDirective() {
     setOylama(null);
     setIptalAdayi(null);
     setBolumSekme("eylemler");
-    setFaz("vaatler");
+    setSecilenSenaryo(BASLANGIC_SENARYOLARI[0].id);
+    setFaz("senaryo");
   }
 
   function vaatSec(id) {
@@ -3074,6 +3688,7 @@ export default function TheDirective() {
     let yeni = etkiUygula(s, { nufuz: -maliyet });
     const h = sonucHesapla(secenek, s);
     const kazanan = secenek.sonuclar[h.kazananIdx];
+    const gizli = gizliMi(eylem, secenek, kazanan);
 
     if (eylem.tur === "KANUN") {
       const oy = meclisOyla(yeni, gerekenOy(eylem));
@@ -3081,7 +3696,7 @@ export default function TheDirective() {
       if (oy.gecti) {
         // Kabul edilen kanun tek seferliktir.
         yeni = { ...yeni, kullanim: { ...yeni.kullanim, [eylem.id]: yeni.tur } };
-        yeni = etkiUygula(yeni, { nufuz: 3 });
+        yeni = etkiUygula(yeni, { nufuz: KANUN_IADE });
         yeni = {
           ...yeni,
           belgeler: [
@@ -3091,9 +3706,13 @@ export default function TheDirective() {
               eylemId: eylem.id,
               ad: eylem.ad,
               tur: eylem.tur,
+              kategori: eylem.kategori,
               etki: kazanan.etki,
               sonucMetni: kazanan.metin,
               alinti: kazanan.alinti,
+              gecikmeli: kazanan.gecikmeli,
+              gecikmeliMetin: kazanan.gecikmeliMetin,
+              gizli,
               oyToplam: oy.toplam,
               oyGereken: oy.gereken,
               durum: "onaylandi",
@@ -3120,9 +3739,13 @@ export default function TheDirective() {
             eylemId: eylem.id,
             ad: eylem.ad,
             tur: eylem.tur,
+            kategori: eylem.kategori,
             etki: kazanan.etki,
             sonucMetni: kazanan.metin,
-              alinti: kazanan.alinti,
+            alinti: kazanan.alinti,
+            gecikmeli: kazanan.gecikmeli,
+            gecikmeliMetin: kazanan.gecikmeliMetin,
+            gizli,
             durum: "onaylandi",
             yururlukTuru: yeni.tur + 1,
             tamamlanmaTuru: null,
@@ -3132,16 +3755,19 @@ export default function TheDirective() {
       setSonuc({ ...h, kazanan, gecti: true });
     } else {
       setOylama(null);
-      yeni = etkiUygula(yeni, kazanan.etki);
+      yeni = etkiUygula(yeni, kazanan.etki, KATEGORI_EGILIMI[eylem.kategori]);
       const haberKuyrugu = [
         ...(yeni.bekleyenHaberler || []),
         {
           tip: "operasyon",
           ad: eylem.ad,
-          belgeTuru: "OPERASYON",
+          // Gizli iş Resmî Gazete filtresine zaten takılmaz; ayrı bir belge türü
+          // vermek onu gazetenin hiçbir bölümüne düşmez hale getirir.
+          belgeTuru: gizli ? "GİZLİ" : "OPERASYON",
           metin: kazanan.metin,
           alinti: kazanan.alinti,
           etki: kazanan.etki,
+          gizli,
         },
       ];
       const kuyruk = kazanan.gecikmeli
@@ -3150,8 +3776,10 @@ export default function TheDirective() {
             {
               tur: yeni.tur + ETKI_GECIKMESI,
               kaynak: eylem.ad,
+              kategori: eylem.kategori,
               metin: kazanan.gecikmeliMetin || "Operasyonun asıl etkisi şimdi hissedildi.",
               etki: kazanan.gecikmeli,
+              gizli,
             },
           ]
         : yeni.bekleyenEtkiler || [];
@@ -3187,6 +3815,33 @@ export default function TheDirective() {
     setS(yeni);
     if (yeni.faz === "azil") setFaz("azil");
     else setFaz(yeni.faz === "secim" ? "secim" : "gunluk");
+  }
+
+  // Muhalefet hamlesine oyuncunun tepkisi. Nüfuz harcanmaz — bu oyuncunun
+  // başlattığı bir eylem değil, muhalefetin oyuncuya dayattığı bir an.
+  function muhalefetSecenekSec(secenekIdx) {
+    const muhalefetEylem = MUHALEFET_HAMLELERI.find((m) => m.id === s.muhalefetEylemId);
+    if (!muhalefetEylem) return;
+    const secenek = muhalefetEylem.secenekler[secenekIdx];
+    const h = sonucHesapla(secenek, s);
+    const kazanan = secenek.sonuclar[h.kazananIdx];
+    let yeni = etkiUygula(s, kazanan.etki, KATEGORI_EGILIMI[muhalefetEylem.kategori]);
+    const kuyruk = kazanan.gecikmeli
+      ? [
+          ...(yeni.bekleyenEtkiler || []),
+          {
+            tur: yeni.tur + ETKI_GECIKMESI,
+            kaynak: muhalefetEylem.ad,
+            kategori: muhalefetEylem.kategori,
+            metin: kazanan.gecikmeliMetin || "Uzlaşmanın asıl etkisi şimdi hissedildi.",
+            etki: kazanan.gecikmeli,
+            gizli: gizliMi(muhalefetEylem, secenek, kazanan),
+          },
+        ]
+      : yeni.bekleyenEtkiler || [];
+    yeni = { ...yeni, bekleyenEtkiler: kuyruk };
+    setS(yeni);
+    setMuhalefetSonuc({ secenekIdx, kazanan });
   }
 
   // ---------- AÇILIŞ ----------
@@ -3258,7 +3913,7 @@ export default function TheDirective() {
           </div>
 
           <button
-            onClick={() => { setKayit(null); setFaz("vaatler"); }}
+            onClick={() => { setKayit(null); setFaz("senaryo"); }}
             className="btn-ikincil w-full py-3 rounded-lg"
           >
             Yeni göreve başla
@@ -3271,11 +3926,76 @@ export default function TheDirective() {
     );
   }
 
+  // ---------- DEVRALDIĞIN ÜLKE ----------
+  if (faz === "senaryo") {
+    return (
+      <Kabuk>
+        <div className="max-w-md mx-auto px-5 pt-12 pb-10">
+          <div className="mono mb-2" style={{ fontSize: 10, color: C.pirinc, letterSpacing: "0.2em" }}>
+            DEVİR TESLİM
+          </div>
+          <h1 className="sans font-extrabold mb-1" style={{ fontSize: 34, color: "#F2F4F8", letterSpacing: "-0.02em" }}>
+            The Directive
+          </h1>
+          <p className="sans mb-8" style={{ fontSize: 13, color: C.solgun, lineHeight: 1.6 }}>
+            Göreve başlamadan önce devraldığın ülkeyi seç. Her biri seni farklı bir
+            köşeden sıkıştırır — aynı araçlarla, farklı bir sırayla uğraşırsın.
+          </p>
+
+          <div className="flex flex-col gap-2.5 mb-8">
+            {BASLANGIC_SENARYOLARI.map((sn) => {
+              const aktif = secilenSenaryo === sn.id;
+              return (
+                <button
+                  key={sn.id}
+                  onClick={() => setSecilenSenaryo(sn.id)}
+                  className="kutu p-4 text-left transition-colors"
+                  style={{ borderColor: aktif ? C.pirinc : C.kenar }}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="sans font-semibold" style={{ fontSize: 15, color: "#F2F4F8" }}>
+                      {sn.ad}
+                    </span>
+                    <span
+                      className="mono px-1.5 py-0.5 rounded flex-shrink-0"
+                      style={{ fontSize: 9, color: C.sonuk, border: `1px solid ${C.kenar}` }}
+                    >
+                      {sn.zorluk.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="mono mb-2" style={{ fontSize: 10, color: C.pirinc, letterSpacing: "0.06em" }}>
+                    {sn.ozet}
+                  </div>
+                  {aktif && (
+                    <p className="sans acilir" style={{ fontSize: 12.5, color: C.solgun, lineHeight: 1.6 }}>
+                      {sn.aciklama}
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <button onClick={() => setFaz("vaatler")} className="btn-ana w-full py-3.5 rounded-lg">
+            Devam
+          </button>
+        </div>
+      </Kabuk>
+    );
+  }
+
   // ---------- VAAT SEÇİMİ ----------
   if (faz === "vaatler") {
     return (
       <Kabuk>
         <div className="max-w-md mx-auto px-5 pt-12 pb-10">
+          <button
+            onClick={() => setFaz("senaryo")}
+            className="btn-ikincil px-3 py-1.5 rounded-lg mb-4 inline-flex items-center gap-1.5"
+            style={{ fontSize: 12 }}
+          >
+            <ArrowLeft size={13} /> {senaryoBul(secilenSenaryo).ad}
+          </button>
           <div className="mono mb-2" style={{ fontSize: 10, color: C.pirinc, letterSpacing: "0.2em" }}>
             KAMPANYA DOSYASI
           </div>
@@ -3378,8 +4098,42 @@ export default function TheDirective() {
   }
 
   // ---------- TUR GÜNLÜĞÜ ----------
+  // Gazeteden sonra sırasıyla: gizli dosya (varsa) → muhalefet hamlesi (varsa) → panel.
+  const gizliHaberler = ((s.gunluk && s.gunluk.haberler) || []).filter((h) => h.gizli);
+  const gunlukSonrasi = () =>
+    gizliHaberler.length > 0 ? "gizli" : s.faz === "muhalefet" ? "muhalefet" : "panel";
+
   if (faz === "gunluk") {
-    return <Gazete rapor={s.gunluk} sonrakiTur={s.tur} onDevam={() => setFaz("panel")} />;
+    return <Gazete rapor={s.gunluk} sonrakiTur={s.tur} onDevam={() => setFaz(gunlukSonrasi())} />;
+  }
+
+  // ---------- GİZLİ DOSYA ----------
+  if (faz === "gizli" && gizliHaberler.length > 0) {
+    return (
+      <GizliDosya
+        haberler={gizliHaberler}
+        onDevam={() => setFaz(s.faz === "muhalefet" ? "muhalefet" : "panel")}
+      />
+    );
+  }
+
+  // ---------- MUHALEFET HAMLESİ ----------
+  if (faz === "muhalefet") {
+    const muhalefetEylem = MUHALEFET_HAMLELERI.find((m) => m.id === s.muhalefetEylemId);
+    if (muhalefetEylem) {
+      return (
+        <MuhalefetHamlesi
+          eylem={muhalefetEylem}
+          s={s}
+          sonuc={muhalefetSonuc}
+          onSecenekSec={muhalefetSecenekSec}
+          onDevam={() => {
+            setMuhalefetSonuc(null);
+            setFaz("panel");
+          }}
+        />
+      );
+    }
   }
 
   // ---------- MECLİS OYLAMASI (animasyonlu) ----------
@@ -3440,8 +4194,8 @@ export default function TheDirective() {
                       className="mono px-2 py-1 rounded"
                       style={{
                         fontSize: 10,
-                        background: v > 0 ? "rgba(45,110,70,0.14)" : "rgba(155,47,42,0.12)",
-                        color: v > 0 ? "#2D6E46" : C.damga,
+                        background: etkiIyiMi(k, v) ? "rgba(45,110,70,0.14)" : "rgba(155,47,42,0.12)",
+                        color: etkiIyiMi(k, v) ? "#2D6E46" : C.damga,
                       }}
                     >
                       {etkiMetni(k, v)}
@@ -3865,6 +4619,23 @@ export default function TheDirective() {
           />
         </div>
 
+        {s.ist.hazine < 0 && (
+          <div
+            className="kutu p-3 mb-3"
+            style={{ background: "rgba(229,85,90,.08)", borderColor: "rgba(229,85,90,.35)" }}
+          >
+            <div className="mono flex items-center gap-1.5 mb-1.5" style={{ fontSize: 9, color: C.eksi, letterSpacing: "0.14em" }}>
+              <AlertTriangle size={12} /> HAZİNE BORÇLU · ${paraYaz(-s.ist.hazine)}B
+            </div>
+            <div className="mono" style={{ fontSize: 10.5, color: C.solgun, lineHeight: 1.55 }}>
+              Her yarıyıl faiz işliyor, onay ve istikrar aşağı çekiliyor. Vergi kollarını
+              yükselterek ya da harcama kollarını kısarak kasayı toparlayabilirsin.
+            </div>
+          </div>
+        )}
+
+        <BlokSerit s={s} />
+
         <VaatTakip s={s} />
 
         <div className="mono mb-3" style={{ fontSize: 10, color: C.solgun, letterSpacing: "0.1em" }}>
@@ -4069,8 +4840,17 @@ export default function TheDirective() {
 
 // ---------- SEÇİM EKRANI (animasyonlu) ----------
 
+// Final kartının tonunu renge çevirir.
+const FINAL_RENK = {
+  parlak: C.arti,
+  solgun: C.pirinc,
+  golgeli: "#E0A33C",
+  karanlik: C.eksi,
+};
+
 function SecimEkrani({ s, onYeniden }) {
   const r = secimHesapla(s);
+  const final = finalKarti(s, r);
   const [asama, setAsama] = useState("sandik"); // sandik → sayim → sonuc
   const [acilan, setAcilan] = useState(0); // açılan sandık oranı 0–1
 
@@ -4150,12 +4930,13 @@ function SecimEkrani({ s, onYeniden }) {
         <h1
           className="sans font-extrabold mb-6"
           style={{
-            fontSize: 30,
+            fontSize: asama === "sonuc" ? 26 : 30,
             minHeight: 40,
-            color: asama === "sonuc" ? (r.kazandi ? C.arti : C.eksi) : "#F2F4F8",
+            lineHeight: 1.15,
+            color: asama === "sonuc" ? FINAL_RENK[final.ton] : "#F2F4F8",
           }}
         >
-          {asama === "sayim" ? "Sonuçlar geliyor…" : r.kazandi ? "Yeniden seçildin" : "Seçimi kaybettin"}
+          {asama === "sayim" ? "Sonuçlar geliyor…" : final.baslik}
         </h1>
 
         {/* Tek kart: sayım + sonuç */}
@@ -4194,7 +4975,7 @@ function SecimEkrani({ s, onYeniden }) {
 
             <div style={{ flex: 1, textAlign: "right" }}>
               <div className="mono mb-1" style={{ fontSize: 9, color: C.solgun, letterSpacing: "0.12em" }}>
-                MUHALEFET
+                {MUHALEFET_LIDERI.ad.toUpperCase()}
               </div>
               <div className="sans font-extrabold tabular-nums" style={{ fontSize: 36, color: !ondeyim ? C.eksi : "#8B93A7", lineHeight: 1 }}>
                 %{rakipYuzde.toFixed(1)}
@@ -4233,11 +5014,32 @@ function SecimEkrani({ s, onYeniden }) {
 
         {asama === "sonuc" && (
           <div className="acilir">
+            {/* Görev süresinin nasıl kapandığı — sandık ve arkanda kalan dosya birlikte */}
+            <div
+              className="kutu p-4 mb-3"
+              style={{ borderColor: FINAL_RENK[final.ton], background: "rgba(255,255,255,.015)" }}
+            >
+              <div className="mono mb-2" style={{ fontSize: 9.5, color: FINAL_RENK[final.ton], letterSpacing: "0.12em" }}>
+                GÖREV SÜRESİ KAPANDI
+              </div>
+              <p className="sans" style={{ fontSize: 13, color: C.solgun, lineHeight: 1.7 }}>
+                {final.metin}
+              </p>
+            </div>
+
             <div className="kutu p-4 mb-3">
               <div className="mono mb-2.5" style={{ fontSize: 9.5, color: C.solgun, letterSpacing: "0.12em" }}>
                 OYUNU NE BELİRLEDİ
               </div>
               <Satir ad="Halkın onayı" deger={Math.round(s.ist.onay)} />
+              {SECMEN_BLOKLARI.map((b) => (
+                <Satir
+                  key={b.k}
+                  ad={`   ${b.ad}`}
+                  deger={Math.round((s.bloklar || {})[b.k] ?? 0)}
+                  renk={C.sonuk}
+                />
+              ))}
               <Satir ad="Ülkenin istikrarı" deger={Math.round(s.ist.istikrar)} />
               <Satir ad="Dış itibar" deger={Math.round(s.ist.kuresel)} />
               <div className="border-t my-2.5" style={{ borderColor: C.kenar }} />
@@ -4301,6 +5103,152 @@ function kabulMu(i, kabulSayisi) {
   return (
     Math.floor(((i + 1) * kabulSayisi) / TOPLAM_SANDALYE) >
     Math.floor((i * kabulSayisi) / TOPLAM_SANDALYE)
+  );
+}
+
+// Muhalefetin oyunda tam bir kez sahneye çıktığı an. Oyuncunun kendi seçtiği
+// bir eylem değil — panel akışının dışından, kağıt katmanının aynı görsel
+// dilini kullanarak araya giren zorunlu bir sahne.
+function MuhalefetHamlesi({ eylem, s, sonuc, onSecenekSec, onDevam }) {
+  if (sonuc) {
+    const { kazanan } = sonuc;
+    return (
+      <Kabuk>
+        <div className="max-w-md mx-auto px-4 pt-8 pb-10">
+          <div className="kagit p-6 mb-4 relative overflow-hidden">
+            <div
+              className="damga sans font-extrabold absolute"
+              style={{
+                color: C.damga,
+                border: `3px solid ${C.damga}`,
+                top: 18, right: 14, padding: "3px 10px", borderRadius: 6,
+                fontSize: 15, letterSpacing: "0.06em",
+              }}
+            >
+              MUHALEFET
+            </div>
+
+            <div className="mono mb-3" style={{ fontSize: 9, color: C.damga, letterSpacing: "0.15em" }}>
+              MUHALEFET HAMLESİ · TUR {s.tur}
+            </div>
+            <h2 className="mono font-bold mb-4" style={{ fontSize: 17, color: C.murekkep }}>
+              {eylem.ad}
+            </h2>
+
+            <div className="mono mb-2" style={{ fontSize: 9, color: "#6B6250", letterSpacing: "0.12em" }}>
+              SONUÇ
+            </div>
+            <p className="mono mb-4" style={{ fontSize: 13, color: C.murekkep, lineHeight: 1.65 }}>
+              {kazanan.metin}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(kazanan.etki).map(([k, v]) => (
+                <span
+                  key={k}
+                  className="mono px-2 py-1 rounded"
+                  style={{
+                    fontSize: 10,
+                    background: etkiIyiMi(k, v) ? "rgba(45,110,70,0.14)" : "rgba(155,47,42,0.12)",
+                    color: etkiIyiMi(k, v) ? "#2D6E46" : C.damga,
+                  }}
+                >
+                  {etkiMetni(k, v)}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <button onClick={onDevam} className="btn-ana w-full py-3.5 rounded-lg">
+            Panele dön
+          </button>
+        </div>
+      </Kabuk>
+    );
+  }
+
+  return (
+    <Kabuk>
+      <div className="max-w-md mx-auto px-4 pt-6 pb-10">
+        <div className="kutu p-3 mb-4" style={{ background: "rgba(229,85,90,.08)", borderColor: "rgba(229,85,90,.35)" }}>
+          <div className="mono flex items-center gap-1.5" style={{ fontSize: 9, color: C.eksi, letterSpacing: "0.14em" }}>
+            <AlertTriangle size={12} /> MUHALEFET HAMLESİ
+          </div>
+        </div>
+
+        <div className="kagit p-6 mb-4">
+          <div className="mono mb-3" style={{ fontSize: 9, color: C.damga, letterSpacing: "0.15em" }}>
+            TUR {s.tur} · MUHALEFET İNİSİYATİFİ
+          </div>
+          <h2 className="mono font-bold mb-3" style={{ fontSize: 18, color: C.murekkep, lineHeight: 1.3 }}>
+            {eylem.ad}
+          </h2>
+          <p className="mono mb-4" style={{ fontSize: 13, color: "#3A3527", lineHeight: 1.65 }}>
+            {eylem.metin}
+          </p>
+
+          {/* Karşındakinin bir adı var: hamleyi kimin yaptığı belli olsun. */}
+          <div
+            className="mono mb-5 pl-3"
+            style={{ fontSize: 11.5, color: "#6B6250", lineHeight: 1.6, borderLeft: `2px solid ${C.damga}` }}
+          >
+            {MUHALEFET_LIDERI.unvan} <strong style={{ color: C.murekkep }}>{MUHALEFET_LIDERI.ad}</strong>.{" "}
+            {MUHALEFET_LIDERI.arkaPlan}
+          </div>
+
+          <div className="mono mb-3" style={{ fontSize: 9, color: "#6B6250", letterSpacing: "0.12em" }}>
+            NASIL KARŞILIK VERİYORSUN?
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {eylem.secenekler.map((sec, i) => {
+              const h = sonucHesapla(sec, s);
+              return (
+                <button
+                  key={i}
+                  onClick={() => onSecenekSec(i)}
+                  className="rounded-lg overflow-hidden text-left p-3"
+                  style={{ border: `1px solid #C9BE9E` }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="mono font-semibold" style={{ fontSize: 13, color: C.murekkep }}>
+                      {sec.ad}
+                    </span>
+                    {sec.riskli && (
+                      <span
+                        className="mono px-1.5 py-0.5 rounded"
+                        style={{ fontSize: 9, color: C.eksi, border: `1px solid ${C.eksi}` }}
+                      >
+                        RİSKLİ
+                      </span>
+                    )}
+                  </div>
+                  {sec.sonuclar.map((so, j) => {
+                    const kazanir = h.kazananIdx === j;
+                    return (
+                      <div key={j} className="flex gap-2.5 mb-1.5">
+                        <span
+                          className="mono font-bold px-1.5 py-0.5 rounded self-start"
+                          style={{
+                            fontSize: 11, minWidth: 40, textAlign: "center",
+                            color: kazanir ? "#FFF" : "#6B6250",
+                            background: kazanir ? C.damga : "rgba(0,0,0,0.06)",
+                          }}
+                        >
+                          %{h.yuzdeler[j]}
+                        </span>
+                        <span className="mono flex-1" style={{ fontSize: 11.5, color: kazanir ? C.murekkep : "#7A7260", lineHeight: 1.5 }}>
+                          {so.metin}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Kabuk>
   );
 }
 
@@ -4492,27 +5440,107 @@ function resmiBaslik(ad, tur) {
   return tur === "KANUN" ? `${ad} Hakkında Kanun` : `${ad} Kararnamesi`;
 }
 
+// Gazetenin karşılığı: halkın okumadığı dosya. Gazete o yarıyılda ülkenin
+// neyi bildiğini yazar, bu ekran ne olduğunu. İkisinin arasındaki fark,
+// gizli iş yapan bir yönetimin asıl bedelidir — şüphe göstergesi o farkı sayar.
+function GizliDosya({ haberler, onDevam }) {
+  return (
+    <Kabuk>
+      <div className="max-w-md mx-auto px-4 pt-8 pb-10">
+        <div className="kagit p-6 mb-4 relative overflow-hidden">
+          <div
+            className="damga sans font-extrabold absolute"
+            style={{
+              color: C.damga,
+              border: `3px solid ${C.damga}`,
+              top: 18, right: 14, padding: "3px 10px", borderRadius: 6,
+              fontSize: 15, letterSpacing: "0.06em",
+            }}
+          >
+            GİZLİ
+          </div>
+
+          <div className="mono mb-1" style={{ fontSize: 9, color: C.damga, letterSpacing: "0.15em" }}>
+            CUMHURBAŞKANLIĞI · TASNİF DIŞI
+          </div>
+          <h2 className="mono font-bold mb-1" style={{ fontSize: 17, color: C.murekkep }}>
+            Kapalı Dosya
+          </h2>
+          <p className="mono mb-5" style={{ fontSize: 11, color: "#6B6250", lineHeight: 1.6 }}>
+            Bu sayfadakiler basına yansımadı. Kayıt yalnızca senin masanda tutuluyor.
+          </p>
+
+          {haberler.map((h, i) => (
+            <div
+              key={i}
+              className="mb-4 pb-4"
+              style={{ borderBottom: i < haberler.length - 1 ? "1px dashed #C9BE9E" : "none" }}
+            >
+              <div className="mono mb-1.5" style={{ fontSize: 9, color: "#6B6250", letterSpacing: "0.12em" }}>
+                {h.belgeTuru === "GİZLİ" ? "KAYIT" : h.belgeTuru} · {h.ad.toUpperCase()}
+              </div>
+              <p className="mono mb-2" style={{ fontSize: 13, color: C.murekkep, lineHeight: 1.65 }}>
+                {h.metin}
+              </p>
+              {h.alinti && (
+                <p
+                  className="mono mb-2 pl-3"
+                  style={{ fontSize: 11.5, color: "#6B6250", lineHeight: 1.6, borderLeft: `2px solid ${C.damga}`, fontStyle: "italic" }}
+                >
+                  {h.alinti}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-1">
+                {Object.entries(h.etki || {}).map(([k, v]) => (
+                  <span
+                    key={k}
+                    className="mono px-1.5 py-0.5 rounded"
+                    style={{
+                      fontSize: 9.5,
+                      background: etkiIyiMi(k, v) ? "rgba(45,110,70,.13)" : "rgba(155,47,42,.11)",
+                      color: etkiIyiMi(k, v) ? "#2D6E46" : C.damga,
+                    }}
+                  >
+                    {etkiMetni(k, v)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={onDevam} className="btn-ana w-full py-3.5 rounded-lg">
+          Dosyayı kapat
+        </button>
+      </div>
+    </Kabuk>
+  );
+}
+
 function Gazete({ rapor, sonrakiTur, onDevam }) {
   const manset = mansetSec(rapor);
   const net = rapor.gelir - rapor.gider;
 
-  // Manşete çıkan haber aşağıda tekrarlanmaz.
-  const digerHaberler = rapor.haberler.filter((h) => h !== manset.kullanilan);
+  // Manşete çıkan haber aşağıda tekrarlanmaz. Gizli işler hiç girmez: gazete
+  // yalnızca halkın bildiğini yazar, kalanı Gizli Dosya'da durur.
+  const digerHaberler = rapor.haberler.filter((h) => h !== manset.kullanilan && !h.gizli);
   // Resmî Gazete yalnızca yayımlanan belgeleri listeler; operasyonlar girmez.
+  // Gizli bir kararname burada kalır — belge resmen yayımlanmıştır, gizlenen
+  // yalnızca ne işe yaradığıdır.
   const resmiKayitlar = rapor.haberler.filter(
     (h) => h.belgeTuru === "KANUN" || h.belgeTuru === "KARARNAME"
   );
 
   const EtkiRozet = ({ etki }) => (
     <div className="flex flex-wrap gap-1 mt-2">
-      {Object.entries(etki).map(([k, v]) => (
+      {Object.entries(etki || {}).map(([k, v]) => (
         <span
           key={k}
           className="mono px-1.5 py-0.5 rounded"
           style={{
             fontSize: 9.5,
-            background: v > 0 ? "rgba(45,110,70,.13)" : "rgba(155,47,42,.11)",
-            color: v > 0 ? "#2D6E46" : C.damga,
+            background: etkiIyiMi(k, v) ? "rgba(45,110,70,.13)" : "rgba(155,47,42,.11)",
+            color: etkiIyiMi(k, v) ? "#2D6E46" : C.damga,
           }}
         >
           {etkiMetni(k, v)}
@@ -4668,10 +5696,18 @@ function Gazete({ rapor, sonrakiTur, onDevam }) {
             <div style={{ borderTop: "1px solid #C9BE9E", marginTop: 5, paddingTop: 5 }}>
               <KagitSatir ad="Kasaya kalan" deger={`${net >= 0 ? "+" : "−"}$${paraYaz(Math.abs(net))}B`} kalin />
             </div>
+            {rapor.borc && (
+              <div style={{ borderTop: `1px solid ${C.damga}`, marginTop: 6, paddingTop: 6 }}>
+                <KagitSatir ad="Borç" deger={`$${paraYaz(rapor.borc.borc)}B`} kalin />
+                <KagitSatir ad="Bu yarıyılın faizi" deger={`−$${paraYaz(rapor.borc.faiz)}B`} />
+              </div>
+            )}
             <div className="mono mt-2" style={{ fontSize: 10, color: "#7A7260", lineHeight: 1.5 }}>
               Sosyal yardım ${paraYaz(rapor.giderKalem.sosyal)}B · güvenlik ${paraYaz(rapor.giderKalem.guvenlik)}B ·
               savunma ${paraYaz(rapor.giderKalem.askeri)}B.
               Siyasi nüfuz {rapor.nufuz} puan tazelendi.
+              {rapor.borc &&
+                " Hazine borçlu kapandı; faiz ve kesintiler önümüzdeki yarıyılda da işleyecek."}
             </div>
           </div>
 
